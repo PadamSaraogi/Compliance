@@ -38,7 +38,10 @@ export default function AdminPage() {
       const res = await fetch('/api/admin/sync-sheet', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setSyncMessage({ type: 'success', text: `Sync complete! Added ${data.newCount} new, updated ${data.updatedCount} filings.` });
+        setSyncMessage({ 
+          type: 'success', 
+          text: data.message || 'Sync complete!'
+        });
       } else {
         setSyncMessage({ type: 'error', text: data.error || 'Failed to sync Google Sheet' });
       }
@@ -50,7 +53,7 @@ export default function AdminPage() {
   };
 
   const handleSeedDB = async () => {
-    if (!confirm('Are you sure you want to seed the database? This might overwrite some master data.')) return;
+    if (!confirm('Are you sure you want to seed the database? This will clear existing Saraogi group demo data and re-import from the script.')) return;
     setSyncing(true);
     setSyncMessage(null);
     try {
@@ -223,9 +226,17 @@ export default function AdminPage() {
               <CardHeader><CardTitle>Google Sheets Sync</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-sm text-[var(--color-muted)]">
-                  Pull the latest master filings dictionary from the remote Google Sheet. 
-                  This creates or updates standard rules.
+                  Perform a full sync from your Google Sheet. This will update Master Rules, 
+                  Company details, and specific Compliance Filings based on your sheet data.
                 </p>
+                <div className="bg-blue-50 p-3 rounded-md border border-blue-100 text-xs text-blue-800 space-y-1">
+                  <p className="font-semibold underline">Required Sheet Names:</p>
+                  <ul className="list-disc pl-4 space-y-0.5">
+                    <li><strong>MasterFilings</strong>: Global compliance rules</li>
+                    <li><strong>Companies</strong>: Entity list (PAN, GSTIN, etc.)</li>
+                    <li><strong>Filings</strong>: Specific deadlines for each company</li>
+                  </ul>
+                </div>
                 <div className="bg-slate-50 p-4 rounded border border-[var(--color-border)] font-mono text-xs overflow-x-auto text-[var(--color-text)]">
                   SHEET ID: {process.env.GOOGLE_SHEET_ID || 'Configured via Env'}
                 </div>
@@ -236,7 +247,7 @@ export default function AdminPage() {
                   </div>
                 )}
                 <Button onClick={handleSyncSheet} disabled={syncing}>
-                  {syncing ? 'Syncing...' : 'Sync Master List'}
+                  {syncing ? 'Syncing...' : 'Sync All from Google Sheets'}
                 </Button>
 
                 <div className="pt-4 mt-4 border-t border-[var(--color-border)] flex flex-col items-start">

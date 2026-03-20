@@ -288,9 +288,20 @@ export async function seedDatabase() {
     applicable_to: c.applicable_to,
     is_active: true,
   }));
-  const { data: insertedMaster } = await supabase.from('master_filings')
-    .upsert(masterPayloads, { onConflict: 'name' }).select();
-  const masterMap = new Map((insertedMaster || []).map(m => [m.name, m]));
+   // 3. Master Filings — seed common rules
+  console.log('Upserting master filing rules...');
+  const { error: masterError } = await supabase.from('master_filings')
+    .upsert(masterPayloads, { onConflict: 'name' });
+  if (masterError) {
+    console.error('Master filings upsert failed:', masterError);
+    throw new Error(`Master filings sync failed: ${masterError.message}`);
+  }
+
+  // RE-FETCH ALL master filings to ensure we have IDs and rules for mapping
+  const { data: allMasterFiles, error: fetchMasterError } = await supabase.from('master_filings').select('id, name, due_date_rule');
+  if (fetchMasterError) throw fetchMasterError;
+  const masterMap = new Map((allMasterFiles || []).map(m => [m.name, m]));
+  console.log(`Master filing rules ready: ${masterMap.size} rules.`);
 
   // 4. Companies — insert real Saraogi group companies
   const { data: initialCompanies } = await supabase.from('companies').select('*');
@@ -336,50 +347,55 @@ export async function seedDatabase() {
 
   // 5. Company Filings — generate real filings for EACH company
   const allNewFilings: any[] = [];
-  console.log(`Generating filings for ${allCompanies.length} companies from Excel data...`);
+  let companiesWithFilingsCount = 0;
 
   for (const company of allCompanies) {
     const applicableKeys = getApplicableCompliances(company.entity_type, company.name);
+    let filingsForThisCompany = 0;
 
     for (const masterKey of applicableKeys) {
-      let master: any = null;
-      for (const [name, m] of masterMap.entries()) {
-        if (name.startsWith(masterKey) || name.includes(masterKey)) {
-          master = m;
-          break;
+      // Find EXACT match in master table
+      const master = masterMap.get(masterKey);
+      
+      if (master) {
+        const instances = getComplianceFilings(master.name, master.due_date_rule);
+        for (const inst of instances) {
+          allNewFilings.push({
+            company_id: company.id,
+            master_filing_id: master.id,
+            title: inst.title,
+            deadline: inst.deadline,
+            status: inst.status,
+            period: inst.period || null,
+            completed_at: inst.status === 'Done' ? new Date(new Date(inst.deadline).getTime() - 1000 * 60 * 60 * 24 * 3).toISOString() : null,
+          });
+          filingsForThisCompany++;
         }
-      }
-      if (!master) continue;
-
-      const instances = getComplianceFilings(master.name, master.due_date_rule);
-      for (const inst of instances) {
-        allNewFilings.push({
-          company_id: company.id,
-          master_filing_id: master.id,
-          title: inst.title,
-          deadline: inst.deadline,
-          status: inst.status,
-          period: inst.period || null,
-          completed_at: inst.status === 'Done' ? new Date(new Date(inst.deadline).getTime() - 1000 * 60 * 60 * 24 * 3).toISOString() : null,
-        });
+      } else {
+        console.warn(`No master filing found for key: ${masterKey}`);
       }
     }
+    if (filingsForThisCompany > 0) companiesWithFilingsCount++;
   }
 
   if (allNewFilings.length > 0) {
-    console.log(`Inserting ${allNewFilings.length} filings in batches...`);
+    console.log(`Inserting ${allNewFilings.length} filings...`);
     for (let i = 0; i < allNewFilings.length; i += 200) {
       const { error: batchError } = await supabase.from('company_filings').insert(allNewFilings.slice(i, i + 200));
-      if (batchError) {
-        console.error('Batch insert error:', batchError);
-        throw batchError;
-      }
+      if (batchError) throw batchError;
     }
-    return { success: true, message: `FRESH SEED SUCCESS: Imported ${allCompanies.length} companies and ${allNewFilings.length} real FY 25-26 compliance filings!` };
+    return { 
+      success: true, 
+      message: `AUTOMATIC SEED SUCCESS: Setup ${companiesWithFilingsCount} real entities with ${allNewFilings.length} total compliance filings for FY 2025-26!` 
+    };
   }
 
-  return { success: true, message: `Entities registered (${allCompanies.length}), but no filings were applicable based on their entity types.` };
+  return { 
+    success: true, 
+    message: `Entities found (${allCompanies.length}), but no filings were generated. Rules synced: ${masterMap.size}.` 
+  };
 }
+
 
 
 
