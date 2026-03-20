@@ -16,9 +16,11 @@ export default function FilingsPage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchFilings = async () => {
     setLoading(true);
+    setError(null);
     try {
       const activeCompanyId = localStorage.getItem('activeCompanyId');
       const query = new URLSearchParams();
@@ -27,17 +29,17 @@ export default function FilingsPage() {
       if (activeCompanyId) query.append('company_id', activeCompanyId);
       
       const res = await fetch(`/api/filings?${query.toString()}`);
-      if (res.ok) {
-        const data = await res.json();
-        setFilings(data.filings || []);
-      }
+      if (!res.ok) throw new Error('Failed to load filings');
+      const data = await res.json();
+      setFilings(data.filings || []);
       
       const userRes = await fetch('/api/auth/me');
       if (userRes.ok) {
         setCurrentUser((await userRes.json()).user);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setError(err.message || 'Error loading filings');
     } finally {
       setLoading(false);
     }

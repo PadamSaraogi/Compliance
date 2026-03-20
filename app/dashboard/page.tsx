@@ -8,14 +8,18 @@ import { CategoryChart } from '@/components/dashboard/CategoryChart';
 import { HeatmapCalendar } from '@/components/dashboard/HeatmapCalendar';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
   const [heatmap, setHeatmap] = useState<any>(null);
   const [upcoming, setUpcoming] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetchData = async () => {
+    setLoading(true);
+    setError(null);
     try {
       const activeCompanyId = localStorage.getItem('activeCompanyId');
       const query = activeCompanyId ? `?company_id=${activeCompanyId}` : '';
@@ -26,11 +30,16 @@ export default function DashboardPage() {
         fetch(`/api/dashboard/upcoming${query}`)
       ]);
       
-      if (statsRes.ok) setStats(await statsRes.json());
-      if (heatmapRes.ok) setHeatmap(await heatmapRes.json());
-      if (upcomingRes.ok) setUpcoming((await upcomingRes.json()).upcoming);
-    } catch (error) {
-      console.error('Error fetching dashboard data:', error);
+      if (!statsRes.ok || !heatmapRes.ok || !upcomingRes.ok) {
+        throw new Error('Failed to load some dashboard data. Please check your connection and try again.');
+      }
+
+      setStats(await statsRes.json());
+      setHeatmap(await heatmapRes.json());
+      setUpcoming((await upcomingRes.json()).upcoming);
+    } catch (err: any) {
+      console.error('Error fetching dashboard data:', err);
+      setError(err.message || 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -45,7 +54,7 @@ export default function DashboardPage() {
     return () => window.removeEventListener('companyChanged', handleCompanyChange);
   }, []);
 
-  if (loading || !stats || !heatmap || !upcoming) {
+  if (loading) {
     return (
       <PageWrapper>
         <div className="space-y-6 animate-pulse">
@@ -56,6 +65,20 @@ export default function DashboardPage() {
             <div className="col-span-1 h-80 bg-white rounded-xl" />
             <div className="col-span-2 h-80 bg-white rounded-xl" />
           </div>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  if (error || !stats || !heatmap || !upcoming) {
+    return (
+      <PageWrapper>
+        <div className="flex flex-col items-center justify-center h-[70vh] space-y-4">
+          <div className="p-4 bg-red-50 text-red-800 rounded-lg border border-red-100 max-w-md text-center">
+            <h3 className="font-bold mb-2">Notice</h3>
+            <p>{error || "We couldn't load your dashboard data right now."}</p>
+          </div>
+          <Button onClick={fetchData}>Try Again</Button>
         </div>
       </PageWrapper>
     );
