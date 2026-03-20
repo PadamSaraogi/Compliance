@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAdminSupabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/auth';
+import { filingUpdateSchema } from '@/lib/validations';
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
@@ -41,7 +42,12 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       return NextResponse.json({ error: 'Forbidden. CEO has read-only access.' }, { status: 403 });
     }
 
-    const updates = await req.json();
+    const body = await req.json();
+    const result = filingUpdateSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json({ error: 'Invalid update data', details: result.error.format() }, { status: 400 });
+    }
+    const updates = result.data;
     const supabase = getAdminSupabase();
     
     if (updates.status === 'Done') {

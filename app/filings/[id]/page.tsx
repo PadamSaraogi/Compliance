@@ -41,14 +41,24 @@ export default function FilingDetailPage(props: { params: Promise<{ id: string }
 
   const handleStatusChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     if (user?.role === 'ceo') return;
+    const newStatus = e.target.value;
+    
+    // Optimistic Update
+    setFiling((prev: any) => ({ ...prev, status: newStatus }));
+    
     try {
-      await fetch(`/api/filings/${params.id}`, {
+      const res = await fetch(`/api/filings/${params.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: e.target.value })
+        body: JSON.stringify({ status: newStatus })
       });
+      if (!res.ok) throw new Error('Failed to update status');
+      fetchData(); // Sync with server
+    } catch (e) {
+      console.error(e);
+      // Revert if failed
       fetchData();
-    } catch (e) {}
+    }
   };
 
   const handleAddNote = async (e: React.FormEvent) => {

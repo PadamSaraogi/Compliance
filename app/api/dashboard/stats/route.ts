@@ -14,9 +14,19 @@ export async function GET(req: Request) {
 
     const supabase = getAdminSupabase();
     
+    // Improved select to ensure nested joins work correctly with PostgREST
     let query = supabase
       .from('company_filings')
-      .select('*, master_filings(category_id, compliance_categories(name, color))')
+      .select(`
+        *,
+        master_filings (
+          id,
+          compliance_categories (
+            name,
+            color
+          )
+        )
+      `)
       .neq('status', 'NA');
 
     if (companyId && companyId !== 'all') {
@@ -32,46 +42,62 @@ export async function GET(req: Request) {
     const thirtyDaysFromNow = new Date(now);
     thirtyDaysFromNow.setDate(now.getDate() + 30);
     
+    // Financial Year Start (April 1st)
     const currentYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
     const fyStart = new Date(currentYear, 3, 1);
 
     let total = filings.length;
-    let overdue = 0;
+    let overdueCount = 0;
     let due30Days = 0;
     let completedThisFY = 0;
-    let completed = 0;
+    let completedTotal = 0;
     
     const categories: Record<string, { total: number; completed: number; color: string }> = {};
 
-    filings.forEach(f => {
+    filings.forEach((f: any) => {
       const deadline = new Date(f.deadline);
       const isCompleted = f.status === 'Done';
       
-      if (isCompleted) completed++;
-      if (isCompleted && f.completed_at && new Date(f.completed_at) >= fyStart) {
-        completedThisFY++;
+      if (isCompleted) {
+        completedTotal++;
+        // Use completed_at if present, else fallback to deadline for stats realism
+        const compDate = f.completed_at ? new Date(f.completed_at) : deadline;
+        if (compDate >= fyStart) {
+          completedThisFY++;
+        }
       }
       
-      if (f.status === 'Overdue' || (!isCompleted && deadline < now)) overdue++;
-      if (!isCompleted && deadline >= now && deadline <= thirtyDaysFromNow) due30Days++;
+      // Calculate overdue: Status is 'Overdue' OR not completed and deadline passed
+      if (f.status === 'Overdue' || (!isCompleted && deadline < now)) {
+        overdueCount++;
+      }
       
-      // @ts-ignore
-      const catName = f.master_filings?.compliance_categories?.name || 'Other';
-      // @ts-ignore
-      const catColor = f.master_filings?.compliance_categories?.color || '#94a3b8';
+      // Due in next 30 days
+      if (!isCompleted && deadline >= now && deadline <= thirtyDaysFromNow) {
+        due30Days++;
+      }
+      
+      // Extract Category Name and Color safely
+      // Note: master_filings might be an object or a single-item array depending on the Supabase client version/config
+      const mf = Array.isArray(f.master_filings) ? f.master_filings[0] : f.master_filings;
+      const cat = mf?.compliance_categories;
+      const catName = (Array.isArray(cat) ? cat[0]?.name : cat?.name) || 'Other';
+      const catColor = (Array.isArray(cat) ? cat[0]?.color : cat?.color) || '#94a3b8';
       
       if (!categories[catName]) {
         categories[catName] = { total: 0, completed: 0, color: catColor };
       }
       categories[catName].total++;
-      if (isCompleted) categories[catName].completed++;
+      if (isCompleted) {
+        categories[catName].completed++;
+      }
     });
 
-    const healthScore = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const healthScore = total > 0 ? Math.round((completedTotal / total) * 100) : 0;
 
     return NextResponse.json({
       total,
-      overdue,
+      overdue: overdueCount,
       due30Days,
       completedThisFY,
       healthScore,
@@ -79,6 +105,7 @@ export async function GET(req: Request) {
     });
 
   } catch (error: any) {
+    console.error('Stats API Error:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

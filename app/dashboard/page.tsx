@@ -157,7 +157,7 @@ export default function DashboardPage() {
                         <div className="flex flex-col">
                           <span>{new Date(item.deadline).toLocaleDateString('en-IN')}</span>
                           <span className="text-[10px] text-slate-500">
-                            {item.daysLeft < 0 ? 'Overdue' : `${item.daysLeft} days left`}
+                            {item.status === 'Done' ? 'Completed' : (item.daysLeft < 0 ? 'Overdue' : `${item.daysLeft} days left`)}
                           </span>
                         </div>
                       </td>

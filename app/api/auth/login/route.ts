@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabase';
 import { setSessionCookie } from '@/lib/auth';
+import { loginSchema } from '@/lib/validations';
 
 export async function POST(req: Request) {
   try {
-    const { email, password } = await req.json();
+    const body = await req.json();
+    const result = loginSchema.safeParse(body);
+    if (!result.success) {
+      return NextResponse.json({ error: 'Invalid login data', details: result.error.format() }, { status: 400 });
+    }
+    const { email, password } = result.data;
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password,
