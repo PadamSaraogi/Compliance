@@ -20,9 +20,11 @@ export default function FilingsPage() {
   const fetchFilings = async () => {
     setLoading(true);
     try {
+      const activeCompanyId = localStorage.getItem('activeCompanyId');
       const query = new URLSearchParams();
       if (search) query.append('search', search);
       if (statusFilter !== 'All') query.append('status', statusFilter);
+      if (activeCompanyId) query.append('company_id', activeCompanyId);
       
       const res = await fetch(`/api/filings?${query.toString()}`);
       if (res.ok) {
@@ -43,6 +45,11 @@ export default function FilingsPage() {
 
   useEffect(() => {
     fetchFilings();
+    
+    // Listen for company switching in the sidebar
+    const handleCompanyChange = () => fetchFilings();
+    window.addEventListener('companyChanged', handleCompanyChange);
+    return () => window.removeEventListener('companyChanged', handleCompanyChange);
   }, [statusFilter]);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -121,18 +128,29 @@ export default function FilingsPage() {
                 <table className="w-full text-left border-collapse min-w-[800px]">
                   <thead>
                     <tr className="border-b border-[var(--color-border)] bg-slate-50 text-sm font-medium text-[var(--color-muted)]">
+                      <th className="p-4 font-medium">Company</th>
                       <th className="p-4 font-medium">Filing Name</th>
                       <th className="p-4 font-medium">Category</th>
                       <th className="p-4 font-medium">Deadline</th>
                       <th className="p-4 font-medium">Days Left</th>
                       <th className="p-4 font-medium">Status</th>
-                      <th className="p-4 font-medium">Assigned To</th>
                       <th className="p-4 font-medium text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--color-border)]">
                     {filings.map((f) => (
                       <tr key={f.id} className="hover:bg-slate-50 transition-colors text-sm">
+                        <td className="p-4">
+                          <div className="flex items-center gap-2">
+                            <div 
+                              className="w-2 h-2 rounded-full" 
+                              style={{ backgroundColor: f.companies?.color || '#cbd5e1' }}
+                            />
+                            <span className="font-medium truncate max-w-[120px]" title={f.companies?.name}>
+                              {f.companies?.name || 'Unknown'}
+                            </span>
+                          </div>
+                        </td>
                         <td className="p-4 font-medium text-[var(--color-navy)]">
                           <Link href={`/filings/${f.id}`} className="hover:underline">
                             {f.title}
@@ -165,9 +183,6 @@ export default function FilingsPage() {
                               <option value="NA">N/A</option>
                             </select>
                           )}
-                        </td>
-                        <td className="p-4 max-w-[150px] truncate text-slate-600">
-                          {f.users?.full_name || 'Unassigned'}
                         </td>
                         <td className="p-4 text-right">
                           <Link href={`/filings/${f.id}`}>

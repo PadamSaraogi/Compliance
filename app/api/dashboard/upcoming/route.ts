@@ -24,6 +24,7 @@ export async function GET(req: Request) {
         status, 
         assigned_to, 
         users!assigned_to(full_name),
+        companies(name, color),
         master_filings(
           compliance_categories(name, color)
         )
@@ -54,6 +55,10 @@ export async function GET(req: Request) {
         deadline: f.deadline,
         status: f.status,
         daysLeft,
+        // @ts-ignore
+        companyName: f.companies?.name || 'Unknown',
+        // @ts-ignore
+        companyColor: f.companies?.color || '#cbd5e1',
         // @ts-ignore
         categoryName: f.master_filings?.compliance_categories?.name || 'Other',
         // @ts-ignore
