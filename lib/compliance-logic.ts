@@ -1,4 +1,4 @@
-import { addMonths, format } from 'date-fns';
+import { addMonths, format, startOfMonth, subMonths, getYear, getMonth } from 'date-fns';
 
 /**
  * Maps Entity Type codes to their standard labels
@@ -15,83 +15,90 @@ export const ENTITY_TYPE_MAP: Record<string, string> = {
 
 /**
  * Calculates deadline instances based on frequency and rule
- * Includes EXACT historical dates from the user's Saraogi Group spreadsheet
+ * TRULY DYNAMIC: Generates based on the current date, ensuring perpetual automation.
  */
 export function getComplianceInstances(masterName: string, frequency: string, dueDateRule: string) {
   const filings: { title: string; deadline: string; status: string; period?: string }[] = [];
   const now = new Date();
+  
+  // Calculate Current Financial Year (Starts April)
+  const currentYear = getYear(now);
+  const currentMonth = getMonth(now); // 0-indexed
+  const fiscalStartYear = currentMonth >= 3 ? currentYear : currentYear - 1;
 
-  // 1. ANNUAL FILINGS (ITR, ROC)
+  // 1. ANNUAL FILINGS (ITR, ROC, GSTR-9)
   if (frequency === 'Annual' || masterName.includes('GSTR-9')) {
-    const years = [
-      { label: 'FY 2024-25', year: 2024, done: true },
-      { label: 'FY 2025-26', year: 2025, done: false },
-    ];
-    
-    years.forEach(y => {
-      let deadline = '2025-12-31';
+    // Generate for Last, Current, and Next Financial Year
+    for (let offset = -1; offset <= 1; offset++) {
+      const year = fiscalStartYear + offset;
+      const label = `FY ${year}-${(year + 1).toString().slice(-2)}`;
       
-      // Exact Dates from User Image
+      let deadline = `${year + 1}-12-31`;
+      
       if (masterName.includes('ITR') || masterName.includes('Income Tax')) {
         deadline = (masterName.includes('Individual') || masterName.includes('HUF') || masterName.includes('Partnership')) 
-          ? `${y.year + 1}-09-15` 
-          : `${y.year + 1}-10-31`;
+          ? `${year + 1}-09-15` 
+          : `${year + 1}-10-31`;
       } else if (masterName.includes('DPT-3')) {
-        deadline = `${y.year + 1}-06-30`;
+        deadline = `${year + 1}-06-30`;
       } else if (masterName.includes('DIR-3')) {
-        deadline = `${y.year + 1}-09-30`;
+        deadline = `${year + 1}-09-30`;
       } else if (masterName.includes('AOC-4') || masterName.includes('MGT-7') || masterName.includes('GSTR-9')) {
-        deadline = `${y.year + 1}-12-31`;
+        deadline = `${year + 1}-12-31`;
       }
       
+      // Safety check: if today's date is "Mar 2026", and we are calculating FY 24-25, it's historical
+      const deadlineDate = new Date(deadline);
+      const isHistorical = deadlineDate < now;
+
       filings.push({ 
-        title: `${masterName} — ${y.label}`, 
+        title: `${masterName} — ${label}`, 
         deadline, 
-        status: y.done ? 'Done' : 'Pending',
-        period: y.label
+        status: isHistorical ? 'Done' : 'Pending',
+        period: label
       });
-    });
+    }
   } 
   
   // 2. QUARTERLY FILINGS (TDS, Advance Tax)
   else if (frequency === 'Quarterly') {
-    const quarters = [
-      { label: 'Q1 2025-26', deadline: '2025-07-31', done: true },
-      { label: 'Q2 2025-26', deadline: '2025-10-31', done: true },
-      { label: 'Q3 2025-26', deadline: '2026-01-31', done: true },
-      { label: 'Q4 2025-26', deadline: '2026-05-31', done: false },
-    ];
+    // Generate for Current and Next Financial Year
+    for (let offset = 0; offset <= 1; offset++) {
+      const startYear = fiscalStartYear + offset;
+      const yearSuffix = `${startYear}-${(startYear + 1).toString().slice(-2)}`;
+      
+      const qs = [
+        { label: `Q1 ${yearSuffix}`, deadline: `${startYear}-07-31` },
+        { label: `Q2 ${yearSuffix}`, deadline: `${startYear}-10-31` },
+        { label: `Q3 ${yearSuffix}`, deadline: `${startYear + 1}-01-31` },
+        { label: `Q4 ${yearSuffix}`, deadline: `${startYear + 1}-05-31` },
+      ];
 
-    quarters.forEach(q => {
-      filings.push({
-        title: `${masterName} — ${q.label}`,
-        deadline: q.deadline,
-        status: q.done ? 'Done' : 'Pending',
-        period: q.label
+      qs.forEach(q => {
+        const deadlineDate = new Date(q.deadline);
+        filings.push({
+          title: `${masterName} — ${q.label}`,
+          deadline: q.deadline,
+          status: deadlineDate < now ? 'Done' : 'Pending',
+          period: q.label
+        });
       });
-    });
+    }
   }
 
-  // 3. MONTHLY FILINGS (GST, PF)
+  // 3. MONTHLY FILINGS (GST, PF, ESIC)
   else if (frequency === 'Monthly') {
-    // Generate Jan, Feb, Mar 2026
-    const months = [
-      { label: 'Jan 2026', done: true },
-      { label: 'Feb 2026', done: false },
-      { label: 'Mar 2026', done: false },
-    ];
-
-    months.forEach(m => {
-       // Manual parse for Jan 2026
-       let month = 0; let year = 2026;
-       if (m.label.startsWith('Jan')) month = 0;
-       if (m.label.startsWith('Feb')) month = 1;
-       if (m.label.startsWith('Mar')) month = 2;
-
-       const nextMonth = new Date(year, month + 1, 1);
+    // Generate 12 months window: 3 months back (historical) + current + 8 months ahead
+    const startDate = subMonths(startOfMonth(now), 3);
+    
+    for (let i = 0; i < 12; i++) {
+      const periodDate = addMonths(startDate, i);
+      const periodLabel = format(periodDate, 'MMM yyyy');
+      
+      // Deadline is in the NEXT month
+      const deadlineMonth = addMonths(periodDate, 1);
       
       let day = 20;
-      // Extract day from rule (e.g. "1st of every month", "2nd of every month", "11th")
       const dayMatch = dueDateRule.match(/(\d+)(st|nd|rd|th)/i);
       if (dayMatch) {
         day = parseInt(dayMatch[1]);
@@ -99,15 +106,16 @@ export function getComplianceInstances(masterName: string, frequency: string, du
         day = 11;
       }
       
-      const deadline = format(new Date(nextMonth.getFullYear(), nextMonth.getMonth(), day), 'yyyy-MM-dd');
+      const deadline = format(new Date(deadlineMonth.getFullYear(), deadlineMonth.getMonth(), day), 'yyyy-MM-dd');
+      const isHistorical = periodDate < startOfMonth(now);
       
       filings.push({
-        title: `${masterName} — ${m.label}`,
+        title: `${masterName} — ${periodLabel}`,
         deadline,
-        status: m.done ? 'Done' : 'Pending',
-        period: m.label
+        status: isHistorical ? 'Done' : 'Pending',
+        period: periodLabel
       });
-    });
+    }
   }
 
   return filings;
