@@ -14,6 +14,7 @@ export async function GET(req: Request) {
     const status = searchParams.get('status');
     const assignedTo = searchParams.get('assignedTo');
     const search = searchParams.get('search');
+    const companyId = searchParams.get('company_id');
 
     const supabase = getAdminSupabase();
     
@@ -22,9 +23,13 @@ export async function GET(req: Request) {
       .select(`
         *,
         master_filings!inner(name, frequency, category_id, compliance_categories(name, color)),
-        users!assigned_to(full_name)
+        users!assigned_to(full_name),
+        companies(name, entity_type, color)
       `);
 
+    if (companyId && companyId !== 'all') {
+      query = query.eq('company_id', companyId);
+    }
     if (categoryId) {
       query = query.eq('master_filings.category_id', categoryId);
     }

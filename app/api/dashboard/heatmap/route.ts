@@ -4,18 +4,27 @@ import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
+    const { searchParams } = new URL(req.url);
+    const companyId = searchParams.get('company_id');
+
     const supabase = getAdminSupabase();
     
-    const { data: filings, error } = await supabase
+    let query = supabase
       .from('company_filings')
       .select('deadline, status')
       .neq('status', 'NA')
       .neq('status', 'Done');
+
+    if (companyId && companyId !== 'all') {
+      query = query.eq('company_id', companyId);
+    }
+
+    const { data: filings, error } = await query;
       
     if (error) throw error;
 
