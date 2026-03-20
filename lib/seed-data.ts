@@ -83,9 +83,9 @@ export async function seedRealData(supabase: any, isFresh: boolean = false) {
     // 4. Masters
     await supabase.from('compliance_categories').upsert(DEFAULT_CATEGORIES, { onConflict: 'name' });
     const { data: categories } = await supabase.from('compliance_categories').select('*');
-    const catMap = new Map(categories?.map(c => [c.name, c.id]));
+    const catMap = new Map((categories || []).map((c: any) => [c.name, c.id]));
 
-    const masterPayloads = MASTER_COMPLIANCES.map(m => ({
+    const masterPayloads = MASTER_COMPLIANCES.map((m: any) => ({
       name: m.name, category_id: catMap.get(m.category) || null,
       applicable_to: m.applicable_to, frequency: m.frequency,
       due_date_rule: m.due_date_rule, is_active: true
@@ -95,8 +95,8 @@ export async function seedRealData(supabase: any, isFresh: boolean = false) {
 
     // 5. Filings
     const allFilings: any[] = [];
-    for (const company of dbCompanies || []) {
-      for (const rule of dbMasters || []) {
+    for (const company of (dbCompanies || [])) {
+      for (const rule of (dbMasters || [])) {
         const codes = rule.applicable_to || [];
         const isMatch = codes.length === 0 || codes.includes('all') || codes.some((code: string) => {
           const c = code.trim().toUpperCase();
@@ -109,7 +109,7 @@ export async function seedRealData(supabase: any, isFresh: boolean = false) {
 
         if (isMatch) {
           const instances = getComplianceInstances(rule.name, rule.frequency, rule.due_date_rule);
-          instances.forEach(inst => {
+          instances.forEach((inst: any) => {
             allFilings.push({
               company_id: company.id, master_filing_id: rule.id,
               title: inst.title, deadline: inst.deadline, status: inst.status,

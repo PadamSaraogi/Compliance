@@ -32,9 +32,9 @@ export async function syncMasterFilings() {
 
     const supabase = getAdminSupabase();
     const { data: categories } = await supabase.from('compliance_categories').select('*');
-    const catMap = new Map(categories?.map(c => [c.name, c.id]));
+    const catMap = new Map((categories || []).map((c: any) => [c.name, c.id]));
 
-    const payloads = rows.map(row => {
+    const payloads = rows.map((row: any) => {
       const [name, categoryName, applicableToStr, frequency, dueDateRule, dueDateFormula, governingLaw, penaltyDesc, penaltyFormula, notes, isActiveStr] = row;
       if (!name) return null;
       let catId = catMap.get(categoryName) || null;
@@ -146,7 +146,7 @@ export async function syncCompaniesFromSheet() {
     if (!rows || rows.length === 0) return { success: true, count: 0 };
 
     const supabase = getAdminSupabase();
-    const payloads = rows.map(row => {
+    const payloads = rows.map((row: any) => {
       const [name, entityType, pan, gstin, cin, color] = row;
       if (!name) return null;
       return { name, entity_type: entityType, pan, gstin, cin, color: color || '#0f1f3d' };
@@ -171,10 +171,10 @@ export async function syncFilingsFromSheet() {
     const { data: companies } = await supabase.from('companies').select('id, name');
     const { data: masters } = await supabase.from('master_filings').select('id, name');
     
-    const companyMap = new Map(companies?.map(c => [c.name, c.id]));
-    const masterMap = new Map(masters?.map(m => [m.name, m.id]));
+    const companyMap = new Map((companies || []).map((c: any) => [c.name, c.id]));
+    const masterMap = new Map((masters || []).map((m: any) => [m.name, m.id]));
 
-    const filings = rows.map(row => {
+    const filings = rows.map((row: any) => {
       const [companyName, title, deadline, status, categoryName, period] = row;
       const companyId = companyMap.get(companyName);
       if (!companyId || !title || !deadline) return null;
