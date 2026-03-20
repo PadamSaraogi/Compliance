@@ -320,52 +320,48 @@ export async function seedDatabase() {
     const { data: created, error: insertError } = await supabase.from('companies').insert(newCompanies).select();
     if (insertError) {
       console.error('Error inserting companies:', insertError);
-      throw new Error(`Company insertion failed: ${insertError.message}. Did you run the SQL migration for HUF/Individual?`);
+      throw new Error(`Company insertion failed: ${insertError.message}. Did you run the SQL migration?`);
     }
     allCompanies = [...allCompanies, ...(created || [])];
   }
 
   if (allCompanies.length === 0) {
-    return { success: false, message: 'No companies found or created. Check if REAL_COMPANIES array is empty or database errors.' };
+    return { success: false, message: 'No companies found or created.' };
   }
 
-  // 5. Company Filings — generate real filings for EACH company that doesn't have them
+  // RE-SEED FILINGS: To ensure real data is fresh, we clear all filings for these entities first
+  const allCompanyIds = allCompanies.map(c => c.id);
+  console.log(`Clearing existing filings for ${allCompanyIds.length} companies to ensure fresh data...`);
+  await supabase.from('company_filings').delete().in('company_id', allCompanyIds);
+
+  // 5. Company Filings — generate real filings for EACH company
   const allNewFilings: any[] = [];
-  console.log(`Checking filings for ${allCompanies.length} companies...`);
+  console.log(`Generating filings for ${allCompanies.length} companies from Excel data...`);
 
   for (const company of allCompanies) {
-    const { count, error: countError } = await supabase
-      .from('company_filings')
-      .select('*', { count: 'exact', head: true })
-      .eq('company_id', company.id);
+    const applicableKeys = getApplicableCompliances(company.entity_type, company.name);
 
-    if (countError) console.error(`Error counting filings for ${company.name}:`, countError);
-
-    if ((count || 0) === 0) {
-      const applicableKeys = getApplicableCompliances(company.entity_type, company.name);
-
-      for (const masterKey of applicableKeys) {
-        let master: any = null;
-        for (const [name, m] of masterMap.entries()) {
-          if (name.startsWith(masterKey) || name.includes(masterKey)) {
-            master = m;
-            break;
-          }
+    for (const masterKey of applicableKeys) {
+      let master: any = null;
+      for (const [name, m] of masterMap.entries()) {
+        if (name.startsWith(masterKey) || name.includes(masterKey)) {
+          master = m;
+          break;
         }
-        if (!master) continue;
+      }
+      if (!master) continue;
 
-        const instances = getComplianceFilings(master.name, master.due_date_rule);
-        for (const inst of instances) {
-          allNewFilings.push({
-            company_id: company.id,
-            master_filing_id: master.id,
-            title: inst.title,
-            deadline: inst.deadline,
-            status: inst.status,
-            period: inst.period || null,
-            completed_at: inst.status === 'Done' ? new Date(new Date(inst.deadline).getTime() - 1000 * 60 * 60 * 24 * 3).toISOString() : null,
-          });
-        }
+      const instances = getComplianceFilings(master.name, master.due_date_rule);
+      for (const inst of instances) {
+        allNewFilings.push({
+          company_id: company.id,
+          master_filing_id: master.id,
+          title: inst.title,
+          deadline: inst.deadline,
+          status: inst.status,
+          period: inst.period || null,
+          completed_at: inst.status === 'Done' ? new Date(new Date(inst.deadline).getTime() - 1000 * 60 * 60 * 24 * 3).toISOString() : null,
+        });
       }
     }
   }
@@ -379,10 +375,11 @@ export async function seedDatabase() {
         throw batchError;
       }
     }
-    return { success: true, message: `Successfully seeded ${allCompanies.length} entities with ${allNewFilings.length} total filings!` };
+    return { success: true, message: `FRESH SEED SUCCESS: Imported ${allCompanies.length} companies and ${allNewFilings.length} real FY 25-26 compliance filings!` };
   }
 
-  return { success: true, message: `Entities found (${allCompanies.length}), but they already have filings populated.` };
+  return { success: true, message: `Entities registered (${allCompanies.length}), but no filings were applicable based on their entity types.` };
 }
+
 
 
