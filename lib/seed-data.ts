@@ -293,42 +293,55 @@ export async function seedDatabase() {
   const masterMap = new Map((insertedMaster || []).map(m => [m.name, m]));
 
   // 4. Companies — insert real Saraogi group companies
-  const { data: existingCompanies } = await supabase.from('companies').select('*');
-  const existingNames = new Set((existingCompanies || []).map(c => c.name));
+  const { data: initialCompanies } = await supabase.from('companies').select('*');
   
   // Cleanup: Delete the previous demo companies if they exist
   const DEMO_NAMES = ['Saraogi Industries Pvt Ltd', 'Pinnacle Solutions Pvt Ltd', 'Meridian Global Ltd', 'Vertex Capital LLP', 'NexGen Tech LLP', 'Arjun & Sons Trading Co', 'Riya Enterprises', 'Kapoor Consultants', 'Sharma Logistics', 'Bharat Infrastructure Pvt Ltd'];
-  const demoIds = (existingCompanies || [])
+  const demoIds = (initialCompanies || [])
     .filter(c => DEMO_NAMES.includes(c.name))
     .map(c => c.id);
     
   if (demoIds.length > 0) {
-    // Delete filings for demo companies first to satisfy foreign key
     await supabase.from('company_filings').delete().in('company_id', demoIds);
     await supabase.from('companies').delete().in('id', demoIds);
-    console.log(`Deleted ${demoIds.length} demo companies and their filings.`);
+    console.log(`Deleted ${demoIds.length} demo companies.`);
   }
 
+  // RE-FETCH existing companies after potential deletion
+  const { data: currentCompanies, error: fetchError } = await supabase.from('companies').select('name, id, entity_type');
+  if (fetchError) throw fetchError;
+  
+  const existingNames = new Set((currentCompanies || []).map(c => c.name));
   const newCompanies = REAL_COMPANIES.filter(c => !existingNames.has(c.name));
-  let allCompanies: any[] = (existingCompanies || []).filter(c => !DEMO_NAMES.includes(c.name));
+  let allCompanies: any[] = currentCompanies || [];
 
   if (newCompanies.length > 0) {
-    const { data: created } = await supabase.from('companies').insert(newCompanies).select();
+    console.log(`Inserting ${newCompanies.length} new real companies...`);
+    const { data: created, error: insertError } = await supabase.from('companies').insert(newCompanies).select();
+    if (insertError) {
+      console.error('Error inserting companies:', insertError);
+      throw new Error(`Company insertion failed: ${insertError.message}. Did you run the SQL migration for HUF/Individual?`);
+    }
     allCompanies = [...allCompanies, ...(created || [])];
+  }
+
+  if (allCompanies.length === 0) {
+    return { success: false, message: 'No companies found or created. Check if REAL_COMPANIES array is empty or database errors.' };
   }
 
   // 5. Company Filings — generate real filings for EACH company that doesn't have them
   const allNewFilings: any[] = [];
+  console.log(`Checking filings for ${allCompanies.length} companies...`);
 
   for (const company of allCompanies) {
-    // Check if THIS specific company has any filings
-    const { count } = await supabase
+    const { count, error: countError } = await supabase
       .from('company_filings')
       .select('*', { count: 'exact', head: true })
       .eq('company_id', company.id);
 
+    if (countError) console.error(`Error counting filings for ${company.name}:`, countError);
+
     if ((count || 0) === 0) {
-      console.log(`Seeding filings for: ${company.name}`);
       const applicableKeys = getApplicableCompliances(company.entity_type, company.name);
 
       for (const masterKey of applicableKeys) {
@@ -358,13 +371,18 @@ export async function seedDatabase() {
   }
 
   if (allNewFilings.length > 0) {
-    // Insert in batches of 200
+    console.log(`Inserting ${allNewFilings.length} filings in batches...`);
     for (let i = 0; i < allNewFilings.length; i += 200) {
-      await supabase.from('company_filings').insert(allNewFilings.slice(i, i + 200));
+      const { error: batchError } = await supabase.from('company_filings').insert(allNewFilings.slice(i, i + 200));
+      if (batchError) {
+        console.error('Batch insert error:', batchError);
+        throw batchError;
+      }
     }
-    return { success: true, message: `Seeded ${allNewFilings.length} new filings for your real entities!` };
+    return { success: true, message: `Successfully seeded ${allCompanies.length} entities with ${allNewFilings.length} total filings!` };
   }
 
-  return { success: true, message: 'All companies already have their filings populated.' };
+  return { success: true, message: `Entities found (${allCompanies.length}), but they already have filings populated.` };
 }
+
 
