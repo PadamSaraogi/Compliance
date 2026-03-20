@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, use } from 'react';
 import PageWrapper from '@/components/layout/PageWrapper';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -8,7 +8,8 @@ import { Button } from '@/components/ui/Button';
 import { differenceInDays } from 'date-fns';
 import { ExternalLink, Paperclip, Clock, MessageSquare, CheckCircle, AlertTriangle, FileText } from 'lucide-react';
 
-export default function FilingDetailPage({ params }: { params: { id: string } }) {
+export default function FilingDetailPage(props: { params: Promise<{ id: string }> }) {
+  const params = use(props.params);
   const [filing, setFiling] = useState<any>(null);
   const [activeTab, setActiveTab] = useState('details');
   const [documents, setDocuments] = useState<any[]>([]);

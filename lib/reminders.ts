@@ -7,7 +7,7 @@ export async function processReminders() {
 
   const { data: settings } = await supabase.from('app_settings').select('*');
   const recipientStr = settings?.find(s => s.key === 'reminder_recipients')?.value || '';
-  const recipients = recipientStr.split(',').map(e => e.trim()).filter(Boolean);
+  const recipients = recipientStr.split(',').map((e: string) => e.trim()).filter(Boolean);
   
   if (recipients.length === 0) return { success: false, message: 'No recipients configured' };
 

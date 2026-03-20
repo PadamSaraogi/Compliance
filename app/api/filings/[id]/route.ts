@@ -2,8 +2,9 @@ import { NextResponse } from 'next/server';
 import { getAdminSupabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/auth';
 
-export async function GET(req: Request, { params }: { params: { id: string } }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
@@ -19,7 +20,7 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
         ),
         users!assigned_to(full_name)
       `)
-      .eq('id', params.id)
+      .eq('id', id)
       .single();
       
     if (error) throw error;
@@ -30,8 +31,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   }
 }
 
-export async function PATCH(req: Request, { params }: { params: { id: string } }) {
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     
@@ -50,7 +52,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     const { data: updated, error } = await supabase
       .from('company_filings')
       .update(updates)
-      .eq('id', params.id)
+      .eq('id', id)
       .select()
       .single();
       
@@ -59,7 +61,7 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     // Log to audit log
     await supabase.from('audit_log').insert({
       user_id: user.display_id,
-      company_filing_id: params.id,
+      company_filing_id: id,
       action: 'status_changed',
       new_value: { status: updates.status },
     });

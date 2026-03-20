@@ -3,8 +3,9 @@ import { getAdminSupabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/auth';
 import { uploadFile } from '@/lib/google-drive';
 
-export async function POST(req: Request, { params }: { params: { id: string } }) {
+export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
+    const { id } = await params;
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     if (user.role === 'ceo') return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
@@ -18,7 +19,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const supabase = getAdminSupabase();
     
     // Auto provision a drive folder if not available mapping root -> category -> filing
-    const { data: filing } = await supabase.from('company_filings').select('gdrive_folder_id').eq('id', params.id).single();
+    const { data: filing } = await supabase.from('company_filings').select('gdrive_folder_id').eq('id', id).single();
     let folderId = filing?.gdrive_folder_id || process.env.GOOGLE_DRIVE_ROOT_FOLDER_ID || 'mock_folder';
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -26,7 +27,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     const result = await uploadFile(file.name, file.type, buffer, folderId);
 
     const { data: document, error } = await supabase.from('filing_documents').insert({
-      company_filing_id: params.id,
+      company_filing_id: id,
       file_name: file.name,
       file_type: file.type,
       file_size_kb: Math.round(file.size / 1024),
@@ -41,7 +42,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     
     await supabase.from('audit_log').insert({
       user_id: user.display_id,
-      company_filing_id: params.id,
+      company_filing_id: id,
       action: 'file_uploaded',
       new_value: { file_name: file.name, description },
     });
