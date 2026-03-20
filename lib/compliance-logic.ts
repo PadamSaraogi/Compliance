@@ -91,8 +91,13 @@ export function getComplianceInstances(masterName: string, frequency: string, du
        const nextMonth = new Date(year, month + 1, 1);
       
       let day = 20;
-      if (masterName.includes('GSTR-1') || dueDateRule.includes('11th')) day = 11;
-      if (dueDateRule.includes('1st')) day = 1;
+      // Extract day from rule (e.g. "1st of every month", "2nd of every month", "11th")
+      const dayMatch = dueDateRule.match(/(\d+)(st|nd|rd|th)/i);
+      if (dayMatch) {
+        day = parseInt(dayMatch[1]);
+      } else if (masterName.includes('GSTR-1')) {
+        day = 11;
+      }
       
       const deadline = format(new Date(nextMonth.getFullYear(), nextMonth.getMonth(), day), 'yyyy-MM-dd');
       

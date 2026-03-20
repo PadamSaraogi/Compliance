@@ -113,7 +113,8 @@ export async function seedRealData(supabase: any, isFresh: boolean = false) {
             allFilings.push({
               company_id: company.id, master_filing_id: rule.id,
               title: inst.title, deadline: inst.deadline, status: inst.status,
-              period: inst.period || null, assigned_to: adminUser.id
+              period: inst.period || null, assigned_to: adminUser.id,
+              completed_at: inst.status === 'Done' ? new Date(new Date(inst.deadline).getTime() - 86400000 * 2).toISOString() : null
             });
           });
         }
