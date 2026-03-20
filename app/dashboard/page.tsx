@@ -1,0 +1,146 @@
+"use client";
+
+import { useEffect, useState } from 'react';
+import PageWrapper from '@/components/layout/PageWrapper';
+import { MetricCard } from '@/components/dashboard/MetricCard';
+import { HealthGauge } from '@/components/dashboard/HealthGauge';
+import { CategoryChart } from '@/components/dashboard/CategoryChart';
+import { HeatmapCalendar } from '@/components/dashboard/HeatmapCalendar';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
+
+export default function DashboardPage() {
+  const [stats, setStats] = useState<any>(null);
+  const [heatmap, setHeatmap] = useState<any>(null);
+  const [upcoming, setUpcoming] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchData() {
+      try {
+        const [statsRes, heatmapRes, upcomingRes] = await Promise.all([
+          fetch('/api/dashboard/stats'),
+          fetch('/api/dashboard/heatmap'),
+          fetch('/api/dashboard/upcoming')
+        ]);
+        
+        if (statsRes.ok) setStats(await statsRes.json());
+        if (heatmapRes.ok) setHeatmap(await heatmapRes.json());
+        if (upcomingRes.ok) setUpcoming((await upcomingRes.json()).upcoming);
+      } catch (error) {
+        console.error('Error fetching dashboard data:', error);
+      } finally {
+        setLoading(false);
+      }
+    }
+    fetchData();
+  }, []);
+
+  if (loading || !stats || !heatmap || !upcoming) {
+    return (
+      <PageWrapper>
+        <div className="space-y-6 animate-pulse">
+          <div className="grid grid-cols-4 gap-6">
+            {[1,2,3,4].map(i => <div key={i} className="h-28 bg-white rounded-xl" />)}
+          </div>
+          <div className="grid grid-cols-3 gap-6">
+            <div className="col-span-1 h-80 bg-white rounded-xl" />
+            <div className="col-span-2 h-80 bg-white rounded-xl" />
+          </div>
+        </div>
+      </PageWrapper>
+    );
+  }
+
+  return (
+    <PageWrapper>
+      <div className="space-y-6 animate-fade-in transition-all">
+        
+        {/* Metric Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <MetricCard title="Total Filings Tracked" value={stats.total} />
+          <MetricCard title="Overdue" value={stats.overdue} colorClass="text-[var(--color-overdue)]" subtitle="Needs immediate attention" />
+          <MetricCard title="Due Next 30 Days" value={stats.due30Days} colorClass="text-[var(--color-warning)]" />
+          <MetricCard title="Completed (This FY)" value={stats.completedThisFY} colorClass="text-[var(--color-safe)]" />
+        </div>
+
+        {/* Charts Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <Card className="col-span-1">
+            <CardHeader><CardTitle>Health Score</CardTitle></CardHeader>
+            <CardContent className="flex justify-center flex-col items-center h-full pb-10">
+              <HealthGauge score={stats.healthScore} />
+            </CardContent>
+          </Card>
+          
+          <Card className="col-span-2 flex flex-col">
+            <CardHeader><CardTitle>Category Breakdown</CardTitle></CardHeader>
+            <CardContent className="flex-1">
+              <CategoryChart categories={stats.categories} />
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Heatmap Row */}
+        <Card>
+          <CardHeader><CardTitle>Deadline Map (FY)</CardTitle></CardHeader>
+          <CardContent>
+            <HeatmapCalendar heatmap={heatmap.heatmap} overdue={heatmap.overdue} />
+          </CardContent>
+        </Card>
+
+        {/* Upcoming Deadlines */}
+        <Card>
+          <CardHeader><CardTitle>Upcoming Deadlines</CardTitle></CardHeader>
+          <CardContent className="p-0 overflow-hidden rounded-b-xl">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-[var(--color-border)] bg-slate-50 text-sm font-medium text-[var(--color-muted)]">
+                  <th className="p-4 font-medium">Filing</th>
+                  <th className="p-4 font-medium">Category</th>
+                  <th className="p-4 font-medium">Deadline</th>
+                  <th className="p-4 font-medium">Assigned To</th>
+                  <th className="p-4 font-medium">Days Left</th>
+                  <th className="p-4 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--color-border)]">
+                {upcoming.map((item: any) => (
+                  <tr key={item.id} className="hover:bg-slate-50 text-sm transition-colors">
+                    <td className="p-4 font-medium text-[var(--color-navy)]">{item.title}</td>
+                    <td className="p-4">
+                      <span className="inline-block w-2 h-2 rounded-full mr-2" style={{ backgroundColor: item.categoryColor }}></span>
+                      {item.categoryName}
+                    </td>
+                    <td className="p-4 whitespace-nowrap">{new Date(item.deadline).toLocaleDateString('en-IN')}</td>
+                    <td className="p-4">{item.assignedTo}</td>
+                    <td className="p-4">
+                      {item.daysLeft < 0 ? 
+                        <Badge variant="danger">Overdue</Badge> : 
+                        item.daysLeft <= 3 ? <Badge variant="danger">{item.daysLeft} days</Badge> : 
+                        item.daysLeft <= 7 ? <Badge variant="warning">{item.daysLeft} days</Badge> : 
+                        item.daysLeft <= 30 ? <Badge variant="info">{item.daysLeft} days</Badge> :
+                        <Badge variant="outline">{item.daysLeft} days</Badge>
+                      }
+                    </td>
+                    <td className="p-4">
+                      {item.status === 'Pending' ? <Badge variant="default">Pending</Badge> : 
+                       item.status === 'In Progress' ? <Badge variant="info">In Progress</Badge> : 
+                       <Badge variant="danger">Overdue</Badge>}
+                    </td>
+                  </tr>
+                ))}
+                {upcoming.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-8 text-center text-[var(--color-muted)]">No upcoming deadlines found</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+
+      </div>
+    </PageWrapper>
+  );
+}
