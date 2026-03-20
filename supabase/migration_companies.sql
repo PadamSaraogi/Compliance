@@ -1,10 +1,14 @@
 -- Migration: Add companies table and link to company_filings
+-- Also extends entity_types to include HUF and Individual
 -- Run this in the Supabase SQL Editor
 
 CREATE TABLE IF NOT EXISTS companies (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   name text NOT NULL,
-  entity_type text NOT NULL CHECK (entity_type IN ('Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Sole Proprietorship')),
+  entity_type text NOT NULL CHECK (entity_type IN (
+    'Private Limited', 'Public Limited', 'LLP', 'Partnership',
+    'Sole Proprietorship', 'Individual', 'HUF'
+  )),
   pan text,
   gstin text,
   cin text,
