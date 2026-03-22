@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 
-export const dynamic = 'force-dynamic';
-
-export default function LoginPage() {
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -52,6 +50,69 @@ export default function LoginPage() {
   };
 
   return (
+    <form onSubmit={handleLogin} className="space-y-6">
+      <div>
+        <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Email</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full h-10 px-3 rounded-md border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]"
+          required
+        />
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Password</label>
+        <div className="relative">
+          <input
+            type={showPassword ? "text" : "password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full h-10 px-3 rounded-md border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]"
+            required
+          />
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute right-3 top-2.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
+          >
+            {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <label className="flex items-center">
+          <input
+            type="checkbox"
+            checked={rememberMe}
+            onChange={(e) => setRememberMe(e.target.checked)}
+            className="rounded border-[var(--color-border)] text-[var(--color-navy)] focus:ring-[var(--color-navy)]"
+          />
+          <span className="ml-2 text-sm text-[var(--color-text)]">Remember me</span>
+        </label>
+      </div>
+
+      {error && (
+        <div className="text-sm text-[var(--color-overdue)] bg-red-50 border border-red-200 p-3 rounded-md">
+          {error}
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={loading}
+        className="w-full h-10 bg-[#0f1f3d] text-white rounded-md font-medium hover:bg-[#1a3260] transition-colors disabled:opacity-50"
+      >
+        {loading ? 'Signing in...' : 'Sign In'}
+      </button>
+    </form>
+  );
+}
+
+export default function LoginPage() {
+  return (
     <div className="min-h-screen flex items-center justify-center bg-[var(--color-bg)]">
       <div className="w-full max-w-md bg-[var(--color-surface)] shadow-sm border border-[var(--color-border)] rounded-xl p-8">
         <div className="text-center mb-8">
@@ -59,65 +120,11 @@ export default function LoginPage() {
           <p className="text-[var(--color-muted)]">Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleLogin} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full h-10 px-3 rounded-md border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-[var(--color-text)] mb-1">Password</label>
-            <div className="relative">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full h-10 px-3 rounded-md border border-[var(--color-border)] bg-white text-black focus:outline-none focus:ring-2 focus:ring-[var(--color-navy)]"
-                required
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-2.5 text-[var(--color-muted)] hover:text-[var(--color-text)]"
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
-            </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <label className="flex items-center">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-                className="rounded border-[var(--color-border)] text-[var(--color-navy)] focus:ring-[var(--color-navy)]"
-              />
-              <span className="ml-2 text-sm text-[var(--color-text)]">Remember me</span>
-            </label>
-          </div>
-
-          {error && (
-            <div className="text-sm text-[var(--color-overdue)] bg-red-50 border border-red-200 p-3 rounded-md">
-              {error}
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full h-10 bg-[#0f1f3d] text-white rounded-md font-medium hover:bg-[#1a3260] transition-colors disabled:opacity-50"
-          >
-            {loading ? 'Signing in...' : 'Sign In'}
-          </button>
-        </form>
+        <Suspense fallback={<div className="text-center py-4">Loading login form...</div>}>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );
 }
+
