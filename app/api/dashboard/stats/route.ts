@@ -46,11 +46,11 @@ export async function GET(req: Request) {
     const currentYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
     const fyStart = new Date(currentYear, 3, 1);
 
-    let total = count || 0;
+    let totalCountAllTime = count || 0;
     let overdueCount = 0;
     let due30Days = 0;
     let completedThisFY = 0;
-    let completedTotal = 0;
+    let totalEligibleThisFY = 0;
     
     const categories: Record<string, { total: number; completed: number; color: string }> = {};
 
@@ -58,8 +58,14 @@ export async function GET(req: Request) {
       const deadline = new Date(f.deadline);
       const isCompleted = f.status === 'Done';
       
+      // We only care about current FY for the primary dashboard metrics
+      const isCurrentFY = deadline >= fyStart;
+      
+      if (isCurrentFY) {
+        totalEligibleThisFY++;
+      }
+
       if (isCompleted) {
-        completedTotal++;
         // Use completed_at if present, else fallback to deadline for stats realism
         const compDate = f.completed_at ? new Date(f.completed_at) : deadline;
         if (compDate >= fyStart) {
@@ -78,29 +84,36 @@ export async function GET(req: Request) {
       }
       
       // Extract Category Name and Color safely
-      // Note: master_filings might be an object or a single-item array depending on the Supabase client version/config
       const mf = Array.isArray(f.master_filings) ? f.master_filings[0] : f.master_filings;
       const cat = mf?.compliance_categories;
       const catName = (Array.isArray(cat) ? cat[0]?.name : cat?.name) || 'Other';
       const catColor = (Array.isArray(cat) ? cat[0]?.color : cat?.color) || '#94a3b8';
       
-      if (!categories[catName]) {
-        categories[catName] = { total: 0, completed: 0, color: catColor };
-      }
-      categories[catName].total++;
-      if (isCompleted) {
-        categories[catName].completed++;
+      if (isCurrentFY) {
+        if (!categories[catName]) {
+          categories[catName] = { total: 0, completed: 0, color: catColor };
+        }
+        categories[catName].total++;
+        if (isCompleted) {
+          categories[catName].completed++;
+        }
       }
     });
 
-    const healthScore = total > 0 ? Math.round((completedTotal / total) * 100) : 0;
+    // Health Score: Only count things that are actually DUE by now or are finished.
+    // Logic: completed / (completed + overdue)
+    // This removes future "pending" items from the denominator.
+    const healthScore = (completedThisFY + overdueCount) > 0 
+      ? Math.round((completedThisFY / (completedThisFY + overdueCount)) * 100) 
+      : 100; // Perfect health if nothing is due/overdue yet
 
     return NextResponse.json({
-      total,
-      overdue: overdueCount,
-      due30Days,
-      completedThisFY,
+      total: totalEligibleThisFY, // Metric 1: Total Filings (Current FY)
+      overdue: overdueCount,      // Metric 2: Overdue
+      due30Days,                 // Metric 3: Due Next 30 Days
+      completedThisFY,           // Metric 4: Completed (This FY)
       healthScore,
+      totalAllTime: totalCountAllTime, // Hidden/Extra info
       categories: Object.entries(categories).map(([name, data]) => ({ name, ...data }))
     });
 
