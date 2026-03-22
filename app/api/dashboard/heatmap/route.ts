@@ -17,8 +17,7 @@ export async function GET(req: Request) {
     let query = supabase
       .from('company_filings')
       .select('deadline, status')
-      .neq('status', 'NA')
-      .neq('status', 'Done');
+      .neq('status', 'NA');
 
     if (companyId && companyId !== 'all') {
       query = query.eq('company_id', companyId);
@@ -41,7 +40,7 @@ export async function GET(req: Request) {
       if (!heatmapData[dateString]) heatmapData[dateString] = 0;
       heatmapData[dateString]++;
       
-      if (deadline < now || f.status === 'Overdue') {
+      if (f.status !== 'Done' && (deadline < now || f.status === 'Overdue')) {
         overdueData[dateString] = true;
       }
     });
