@@ -10,7 +10,8 @@ export const ENTITY_TYPE_MAP: Record<string, string> = {
   'PART': 'Partnership',
   'SOLE': 'Sole Proprietorship',
   'INDIV': 'Individual',
-  'HUF': 'HUF'
+  'HUF': 'HUF',
+  'SBL SUB': 'SBL Subsidiary'
 };
 
 /**

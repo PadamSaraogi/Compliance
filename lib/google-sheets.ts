@@ -198,7 +198,8 @@ export async function syncCompaniesFromSheet() {
         'INDIV': 'Individual',
         'HUF': 'HUF',
         'PART': 'Partnership',
-        'SOLE': 'Sole Proprietorship'
+        'SOLE': 'Sole Proprietorship',
+        'SBL SUB': 'SBL Subsidiary'
       };
       
       const entityType = typeMap[entityTypeRaw?.trim().toUpperCase()] || entityTypeRaw;

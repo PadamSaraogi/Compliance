@@ -19,7 +19,7 @@ ALTER TABLE companies ADD CONSTRAINT companies_name_key UNIQUE (name);
 -- 2. Update companies entity_type constraint
 ALTER TABLE companies DROP CONSTRAINT IF EXISTS companies_entity_type_check;
 ALTER TABLE companies ADD CONSTRAINT companies_entity_type_check 
-  CHECK (entity_type IN ('Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Sole Proprietorship', 'Individual', 'HUF'));
+  CHECK (entity_type IN ('Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Sole Proprietorship', 'Individual', 'HUF', 'SBL Subsidiary', 'SBL SUB'));
 
 -- 3. Ensure master_filings has unique name for rules sync
 DELETE FROM master_filings a USING master_filings b WHERE a.id < b.id AND a.name = b.name;

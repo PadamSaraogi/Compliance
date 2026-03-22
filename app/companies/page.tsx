@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { Building2, Plus, Edit2, Check, X } from 'lucide-react';
 
-const ENTITY_TYPES = ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Sole Proprietorship', 'Individual', 'HUF'];
+const ENTITY_TYPES = ['Private Limited', 'Public Limited', 'LLP', 'Partnership', 'Sole Proprietorship', 'Individual', 'HUF', 'SBL Subsidiary'];
 const COLORS = ['#1e40af', '#7c3aed', '#0f766e', '#b45309', '#be185d', '#15803d', '#c2410c', '#6d28d9', '#0891b2', '#1d4ed8'];
 
 export default function CompaniesPage() {
