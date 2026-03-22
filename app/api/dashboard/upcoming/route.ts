@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth';
 import { differenceInDays } from 'date-fns';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function GET(req: Request) {
   try {
