@@ -9,7 +9,9 @@ export function proxy(request: NextRequest) {
   const token = request.cookies.get('compliance_session')?.value;
   const path = request.nextUrl.pathname;
 
-  console.log('Proxy path:', path, 'Has token:', !!token);
+  if (path.startsWith('/api/')) {
+    console.log(`[Proxy] API Request: ${path} | Auth: ${!!token ? 'Token Found' : 'No Token'}`);
+  }
 
   // Define public paths that don't require authentication
   const isPublicPath = 

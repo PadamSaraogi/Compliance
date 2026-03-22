@@ -3,6 +3,7 @@ import { getAdminSupabase } from '@/lib/supabase';
 import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
 
 export async function GET(req: Request) {
   try {

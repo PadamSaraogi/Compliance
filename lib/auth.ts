@@ -26,10 +26,16 @@ export async function getSessionToken() {
 
 export async function getCurrentUser() {
   const token = await getSessionToken();
-  if (!token) return null;
+  if (!token) {
+    console.log('Auth: No token found in session cookie');
+    return null;
+  }
   const supabase = getAdminSupabase();
   const { data: { user }, error } = await supabase.auth.getUser(token);
-  if (error || !user) return null;
+  if (error || !user) {
+    console.log('Auth: getUser failed for token:', error?.message);
+    return null;
+  }
   
   let { data: dbUser } = await supabase
     .from('users')
