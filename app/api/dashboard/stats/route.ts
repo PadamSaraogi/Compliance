@@ -100,12 +100,13 @@ export async function GET(req: Request) {
       }
     });
 
-    // Health Score: Only count things that are actually DUE by now or are finished.
-    // Logic: completed / (completed + overdue)
-    // This removes future "pending" items from the denominator.
-    const healthScore = (completedThisFY + overdueCount) > 0 
-      ? Math.round((completedThisFY / (completedThisFY + overdueCount)) * 100) 
-      : 100; // Perfect health if nothing is due/overdue yet
+    // Health Score: Only count things that are actually DUE by now or are finished, 
+    // PLUS things due in the next 30 days.
+    // Logic: completed / (completed + overdue + due_next_30_days)
+    // This gives a realistic "current month" health view.
+    const healthScore = (completedThisFY + overdueCount + due30Days) > 0 
+      ? Math.round((completedThisFY / (completedThisFY + overdueCount + due30Days)) * 100) 
+      : 100; // Perfect health if nothing is due/overdue/upcoming
 
     return NextResponse.json({
       total: totalEligibleThisFY, // Metric 1: Total Filings (Current FY)
