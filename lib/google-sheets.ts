@@ -22,21 +22,39 @@ export async function syncMasterFilings() {
   if (!sheets || !sheetId) return { success: false, error: 'Google Sheets not configured.' };
 
   try {
+    console.log('Syncing Master Filings from Sheet ID:', sheetId);
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: sheetId,
-      range: 'MasterFilings!A2:K', // Using a specific sheet name
+      range: 'MasterFilings!A2:K', 
     });
 
     const rows = response.data.values;
-    if (!rows || rows.length === 0) return { success: true, count: 0 };
+    console.log('Master Filings raw rows count:', rows?.length || 0);
+
+    if (!rows || rows.length === 0) {
+      console.warn('No rows found in MasterFilings!A2:K. Please check if tab name is EXACTLY "MasterFilings"');
+      return { success: true, count: 0 };
+    }
 
     const supabase = getAdminSupabase();
+
+    // 1. COLLECT AND UPSERT CATEGORIES FIRST
+    const uniqueCategoryNames = Array.from(new Set(rows.map(row => row[1]).filter(Boolean)));
+    if (uniqueCategoryNames.length > 0) {
+      const catUpserts = uniqueCategoryNames.map(name => ({ name }));
+      await supabase.from('compliance_categories').upsert(catUpserts, { onConflict: 'name' });
+    }
+
+    // 2. Fetch fresh categories for mapping
     const { data: categories } = await supabase.from('compliance_categories').select('*');
     const catMap = new Map((categories || []).map((c: any) => [c.name, c.id]));
 
-    const payloads = rows.map((row: any) => {
-      const [name, categoryName, applicableToStr, frequency, dueDateRule, dueDateFormula, governingLaw, penaltyDesc, penaltyFormula, notes, isActiveStr] = row;
-      if (!name) return null;
+    const payloads = rows.map((row: any, idx: number) => {
+      const [name, categoryName, applicableToStr, frequency, dueDateRule, governingLaw, penaltyDesc, penaltyFormula, notes] = row;
+      if (!name) {
+        console.log(`Row ${idx + 2} skipped: No name found.`);
+        return null;
+      }
       let catId = catMap.get(categoryName) || null;
       return {
         name,
@@ -44,19 +62,30 @@ export async function syncMasterFilings() {
         applicable_to: applicableToStr ? applicableToStr.split(',').map((s: string) => s.trim()) : [],
         frequency,
         due_date_rule: dueDateRule,
-        due_date_formula: dueDateFormula,
+        due_date_formula: '', 
         governing_law: governingLaw,
         penalty_description: penaltyDesc,
         penalty_formula: penaltyFormula,
         notes,
-        is_active: isActiveStr?.trim().toLowerCase() !== 'false',
+        is_active: true,
         synced_from_sheet: true,
         last_synced_at: new Date().toISOString()
       };
     }).filter(p => p !== null);
 
-    const { error } = await supabase.from('master_filings').upsert(payloads, { onConflict: 'name' });
-    if (error) throw error;
+    // DEDUPLICATE BY NAME TO AVOID SUPABASE ERR_21000 (ON CONFLICT DO UPDATE cannot affect row twice)
+    const uniquePayloads = Array.from(
+      payloads.reduce((map, p) => map.set(p.name, p), new Map<string, any>()).values()
+    );
+
+    console.log(`Generated ${uniquePayloads.length} unique payloads for Master Filings (from ${payloads.length} total).`);
+
+    const { error } = await supabase.from('master_filings').upsert(uniquePayloads, { onConflict: 'name' });
+    if (error) {
+      console.error('Supabase Upsert Error (Master Filings):', error);
+      throw error;
+    }
+    console.log('Successfully upserted Master Filings to Supabase.');
 
     // AUTOMATICALLY APPLY RULES TO ALL COMPANIES
     const applyResult = await applyMasterRulesToCompanies();
@@ -83,8 +112,12 @@ export async function applyMasterRulesToCompanies() {
   const { data: companies } = await supabase.from('companies').select('*');
   const { data: masters } = await supabase.from('master_filings').select('*').eq('is_active', true);
   
-  if (!companies || !masters) return { count: 0 };
+  if (!companies || !masters) {
+    console.warn(`No companies (${companies?.length || 0}) or rules (${masters?.length || 0}) found to apply.`);
+    return { count: 0 };
+  }
 
+  console.log(`Applying ${masters.length} rules to ${companies.length} companies...`);
   const allNewFilings: any[] = [];
 
   // 2. Cross-reference
@@ -95,11 +128,17 @@ export async function applyMasterRulesToCompanies() {
       const isMatch = applicableCodes.length === 0 || 
                       applicableCodes.includes('all') || 
                       applicableCodes.some((code: string) => {
-                        const standardEntity = code.trim().toUpperCase();
-                        // Handle both full names and codes
+                        const rawCode = code.trim();
+                        const standardEntity = rawCode.toUpperCase();
+                        
+                        // 1. Direct Company Name Match (Case-insensitive)
+                        if (company.name.toLowerCase() === rawCode.toLowerCase()) return true;
+
+                        // 2. Entity Type Match
                         return company.entity_type.startsWith(standardEntity) || 
                                (standardEntity === 'PVT' && company.entity_type === 'Private Limited') ||
                                (standardEntity === 'PUB' && company.entity_type === 'Public Limited') ||
+                               (standardEntity === 'LLP' && company.entity_type === 'LLP') ||
                                (standardEntity === 'INDIV' && company.entity_type === 'Individual') ||
                                (standardEntity === 'HUF' && company.entity_type === 'HUF');
                       });
@@ -120,21 +159,22 @@ export async function applyMasterRulesToCompanies() {
     }
   }
 
-  // 3. Batch Upsert to avoid duplicates (unique constraint on company_id, master_filing_id, title)
-  // Note: We need a unique constraint for this to be perfect, but for now we'll just insert if possible
-  // or use a smart check. To be safe and simple, we'll try to insert.
+  console.log(`Total filings to upsert: ${allNewFilings.length}`);
+
   if (allNewFilings.length > 0) {
     const { error } = await supabase.from('company_filings').upsert(allNewFilings, { 
-      onConflict: 'company_id, title' // We should ensure this constraint exists
+      onConflict: 'company_id, title' 
     });
     if (error) {
-      console.warn('Upsert failed, falling back to batch insert', error);
+      console.warn('Upsert failed for company_filings:', error.message);
       // Fallback: just insert and ignore errors for duplicates
       await supabase.from('company_filings').insert(allNewFilings);
     }
+    console.log(`Successfully synced ${allNewFilings.length} filings to database.`);
     return { count: allNewFilings.length };
   }
 
+  console.warn('No filing instances were generated. Check entity type matches or frequency rules.');
   return { count: 0 };
 }
 
@@ -147,13 +187,31 @@ export async function syncCompaniesFromSheet() {
 
     const supabase = getAdminSupabase();
     const payloads = rows.map((row: any) => {
-      const [name, entityType, pan, gstin, cin, color] = row;
+      const [name, entityTypeRaw, pan, gstin, cin, color] = row;
       if (!name) return null;
+
+      // Map common codes to full names for DB constraints
+      const typeMap: Record<string, string> = {
+        'PVT': 'Private Limited',
+        'PUB': 'Public Limited',
+        'LLP': 'LLP',
+        'INDIV': 'Individual',
+        'HUF': 'HUF',
+        'PART': 'Partnership',
+        'SOLE': 'Sole Proprietorship'
+      };
+      
+      const entityType = typeMap[entityTypeRaw?.trim().toUpperCase()] || entityTypeRaw;
+
       return { name, entity_type: entityType, pan, gstin, cin, color: color || '#0f1f3d' };
     }).filter(p => p !== null);
 
     const { error } = await supabase.from('companies').upsert(payloads, { onConflict: 'name' });
-    if (error) throw error;
+    if (error) {
+      console.error('Supabase Upsert Error (Companies):', error);
+      throw error;
+    }
+    console.log(`Successfully synced ${payloads.length} companies to database.`);
     return { success: true, count: payloads.length };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -205,3 +263,43 @@ export async function syncFilingsFromSheet() {
   }
 }
 
+export async function appendMasterFilingToSheet(data: {
+  name: string;
+  categoryName: string;
+  frequency: string;
+  dueDateRule: string;
+  notes?: string;
+  applicableTo?: string[];
+}) {
+  if (!sheets || !sheetId) return { success: false, error: 'Google Sheets not configured.' };
+
+  try {
+    const row = [
+      data.name,
+      data.categoryName,
+      data.applicableTo?.join(', ') || 'all',
+      data.frequency,
+      data.dueDateRule,
+      '', // dueDateFormula (empty for now)
+      '', // governingLaw
+      '', // penaltyDesc
+      '', // penaltyFormula
+      data.notes || '',
+      'TRUE' // isActive
+    ];
+
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: sheetId,
+      range: 'MasterFilings!A:K',
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [row],
+      },
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error('Error appending to sheet:', error);
+    return { success: false, error: error.message };
+  }
+}

@@ -1,7 +1,7 @@
 import { addMonths, format, startOfMonth, subMonths, getYear, getMonth } from 'date-fns';
 
 /**
- * Maps Entity Type codes to their standard labels
+ * Mapping of entity type codes to human-readable names.
  */
 export const ENTITY_TYPE_MAP: Record<string, string> = {
   'PVT': 'Private Limited',
@@ -17,37 +17,51 @@ export const ENTITY_TYPE_MAP: Record<string, string> = {
  * Calculates deadline instances based on frequency and rule
  * TRULY DYNAMIC: Generates based on the current date, ensuring perpetual automation.
  */
-export function getComplianceInstances(masterName: string, frequency: string, dueDateRule: string) {
+export function getComplianceInstances(masterName: string, frequency: string, dueDateRule: string, oneTimeDate?: string) {
   const filings: { title: string; deadline: string; status: string; period?: string }[] = [];
   const now = new Date();
   
+  // 0. ONE-TIME FILINGS
+  if (frequency === 'Once' && oneTimeDate) {
+    const deadlineDate = new Date(oneTimeDate);
+    filings.push({
+      title: masterName,
+      deadline: oneTimeDate,
+      status: deadlineDate < now ? 'Done' : 'Pending',
+      period: 'One-time'
+    });
+    return filings;
+  }
+
   // Calculate Current Financial Year (Starts April)
   const currentYear = getYear(now);
   const currentMonth = getMonth(now); // 0-indexed
   const fiscalStartYear = currentMonth >= 3 ? currentYear : currentYear - 1;
 
-  // 1. ANNUAL FILINGS (ITR, ROC, GSTR-9)
+  // 1. ANNUAL FILINGS
   if (frequency === 'Annual' || masterName.includes('GSTR-9')) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let monthIdx = 11; // Default Dec
+    let day = 31;
+
+    // Parse Month from Rule (e.g. "31st July")
+    const monthMatch = months.find(m => dueDateRule?.includes(m));
+    if (monthMatch) monthIdx = months.indexOf(monthMatch);
+
+    // Parse Day from Rule
+    const dayMatch = dueDateRule ? dueDateRule.match(/(\d+)(st|nd|rd|th)/i) : null;
+    if (dayMatch) day = parseInt(dayMatch[1]);
+
     // Generate for Last, Current, and Next Financial Year
     for (let offset = -1; offset <= 1; offset++) {
       const year = fiscalStartYear + offset;
       const label = `FY ${year}-${(year + 1).toString().slice(-2)}`;
       
-      let deadline = `${year + 1}-12-31`;
+      // Calculate deadline year. Usually deadlines for a FY are in the FOLLOWING calendar year.
+      // e.g. FY 24-25 -> 31st July 2025.
+      const deadlineYear = year + 1;
       
-      if (masterName.includes('ITR') || masterName.includes('Income Tax')) {
-        deadline = (masterName.includes('Individual') || masterName.includes('HUF') || masterName.includes('Partnership')) 
-          ? `${year + 1}-09-15` 
-          : `${year + 1}-10-31`;
-      } else if (masterName.includes('DPT-3')) {
-        deadline = `${year + 1}-06-30`;
-      } else if (masterName.includes('DIR-3')) {
-        deadline = `${year + 1}-09-30`;
-      } else if (masterName.includes('AOC-4') || masterName.includes('MGT-7') || masterName.includes('GSTR-9')) {
-        deadline = `${year + 1}-12-31`;
-      }
-      
-      // Safety check: if today's date is "Mar 2026", and we are calculating FY 24-25, it's historical
+      const deadline = format(new Date(deadlineYear, monthIdx, day), 'yyyy-MM-dd');
       const deadlineDate = new Date(deadline);
       const isHistorical = deadlineDate < now;
 
@@ -60,25 +74,47 @@ export function getComplianceInstances(masterName: string, frequency: string, du
     }
   } 
   
-  // 2. QUARTERLY FILINGS (TDS, Advance Tax)
+  // 2. QUARTERLY FILINGS
   else if (frequency === 'Quarterly') {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    let day = 15; // Default 15th
+    const dayMatch = dueDateRule ? dueDateRule.match(/(\d+)(st|nd|rd|th)/i) : null;
+    if (dayMatch) day = parseInt(dayMatch[1]);
+
+    // Check for custom start month (e.g. "2nd February")
+    const startMonthMatch = months.find(m => dueDateRule?.includes(m));
+    const startMonthIdx = startMonthMatch ? months.indexOf(startMonthMatch) : -1;
+
     // Generate for Current and Next Financial Year
     for (let offset = 0; offset <= 1; offset++) {
       const startYear = fiscalStartYear + offset;
       const yearSuffix = `${startYear}-${(startYear + 1).toString().slice(-2)}`;
       
-      const qs = [
-        { label: `Q1 ${yearSuffix}`, deadline: `${startYear}-07-31` },
-        { label: `Q2 ${yearSuffix}`, deadline: `${startYear}-10-31` },
-        { label: `Q3 ${yearSuffix}`, deadline: `${startYear + 1}-01-31` },
-        { label: `Q4 ${yearSuffix}`, deadline: `${startYear + 1}-05-31` },
-      ];
+      let baseQuarters: { label: string; month: number; year: number }[] = [];
+      
+      if (startMonthIdx !== -1) {
+        // Custom cycle starting from the detected month
+        baseQuarters = [0, 3, 6, 9].map((mOff, i) => {
+          const m = (startMonthIdx + mOff) % 12;
+          const y = startYear + Math.floor((startMonthIdx + mOff) / 12);
+          return { label: `Q${i+1} ${yearSuffix}`, month: m, year: y };
+        });
+      } else {
+        // Standard Indian Fiscal Quarters
+        baseQuarters = [
+          { label: `Q1 ${yearSuffix}`, month: 6, year: startYear },      // July 
+          { label: `Q2 ${yearSuffix}`, month: 9, year: startYear },      // Oct
+          { label: `Q3 ${yearSuffix}`, month: 0, year: startYear + 1 },  // Jan
+          { label: `Q4 ${yearSuffix}`, month: 4, year: startYear + 1 },  // May (typical for TDS/ROC)
+        ];
+      }
 
-      qs.forEach(q => {
-        const deadlineDate = new Date(q.deadline);
+      baseQuarters.forEach(q => {
+        const deadline = format(new Date(q.year, q.month, day), 'yyyy-MM-dd');
+        const deadlineDate = new Date(deadline);
         filings.push({
           title: `${masterName} — ${q.label}`,
-          deadline: q.deadline,
+          deadline,
           status: deadlineDate < now ? 'Done' : 'Pending',
           period: q.label
         });
@@ -86,20 +122,17 @@ export function getComplianceInstances(masterName: string, frequency: string, du
     }
   }
 
-  // 3. MONTHLY FILINGS (GST, PF, ESIC)
+  // 3. MONTHLY FILINGS
   else if (frequency === 'Monthly') {
-    // Generate 12 months window: 3 months back (historical) + current + 8 months ahead
     const startDate = subMonths(startOfMonth(now), 3);
     
     for (let i = 0; i < 12; i++) {
       const periodDate = addMonths(startDate, i);
       const periodLabel = format(periodDate, 'MMM yyyy');
-      
-      // Deadline is in the NEXT month
       const deadlineMonth = addMonths(periodDate, 1);
       
       let day = 20;
-      const dayMatch = dueDateRule.match(/(\d+)(st|nd|rd|th)/i);
+      const dayMatch = dueDateRule ? dueDateRule.match(/(\d+)(st|nd|rd|th)/i) : null;
       if (dayMatch) {
         day = parseInt(dayMatch[1]);
       } else if (masterName.includes('GSTR-1')) {

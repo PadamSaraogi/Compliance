@@ -27,27 +27,35 @@ export async function createFolder(folderName: string, parentId?: string): Promi
     parents: parentId ? [parentId] : (rootFolderId ? [rootFolderId] : []),
   };
 
-  const file = await drive.files.create({
-    requestBody: fileMetadata,
-    fields: 'id, webViewLink',
-  });
-
-  // Make folder publicly readable 
-  if (file.data.id) {
-    await drive.permissions.create({
-      fileId: file.data.id,
-      requestBody: {
-        role: 'reader',
-        type: 'anyone',
-      },
+  try {
+    const file = await drive.files.create({
+      requestBody: fileMetadata,
+      fields: 'id, webViewLink',
+      supportsAllDrives: true, // IMPORTANT FOR SHARED DRIVES
     });
-  }
 
-  return file.data.id!;
+    // Make folder publicly readable 
+    if (file.data.id) {
+      await drive.permissions.create({
+        fileId: file.data.id,
+        requestBody: {
+          role: 'reader',
+          type: 'anyone',
+        },
+        supportsAllDrives: true,
+      });
+    }
+
+    return file.data.id!;
+  } catch (error: any) {
+    return 'error_folder_id';
+  }
 }
 
 export async function uploadFile(fileName: string, mimeType: string, buffer: Buffer, folderId: string) {
-  if (!drive) return { id: 'mock_'+Date.now(), viewUrl: 'https://drive.google.com/file/d/mock', downloadUrl: '' };
+  if (!drive) {
+    return { id: 'mock_'+Date.now(), viewUrl: 'https://drive.google.com/file/d/mock', downloadUrl: '' };
+  }
   
   const fileMetadata = {
     name: fileName,
@@ -59,23 +67,31 @@ export async function uploadFile(fileName: string, mimeType: string, buffer: Buf
     body: Readable.from(buffer),
   };
 
-  const file = await drive.files.create({
-    requestBody: fileMetadata,
-    media: media,
-    fields: 'id, webViewLink, webContentLink',
-  });
+  try {
+    const file = await drive.files.create({
+      requestBody: fileMetadata,
+      media: media,
+      fields: 'id, webViewLink, webContentLink',
+      supportsAllDrives: true,
+    });
 
-  return {
-    id: file.data.id!,
-    viewUrl: file.data.webViewLink!,
-    downloadUrl: file.data.webContentLink,
-  };
+    return {
+      id: file.data.id!,
+      viewUrl: file.data.webViewLink!,
+      downloadUrl: file.data.webContentLink,
+    };
+  } catch (error: any) {
+    throw error;
+  }
 }
 
 export async function deleteFile(fileId: string) {
   if (!drive) return true;
   try {
-    await drive.files.delete({ fileId });
+    await drive.files.delete({ 
+      fileId,
+      supportsAllDrives: true 
+    });
     return true;
   } catch (error) {
     console.error('Drive delete error', error);

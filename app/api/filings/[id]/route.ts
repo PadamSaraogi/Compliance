@@ -49,6 +49,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     }
     const updates = result.data;
     const supabase = getAdminSupabase();
+
+    // Fetch existing for notification comparison
+    const { data: existing } = await supabase.from('company_filings').select('status, notes').eq('id', id).single();
+    const oldStatus = existing?.status;
     
     if (updates.status === 'Done') {
       updates.completed_at = new Date().toISOString();
@@ -64,12 +68,27 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       
     if (error) throw error;
 
+    // Trigger Real-Time Notification
+    const { sendUpdateNotification } = await import('@/lib/notifications');
+    if (updates.status && updates.status !== oldStatus) {
+      await sendUpdateNotification(id, 'status_change', {
+        oldStatus,
+        newStatus: updates.status,
+        updatedBy: user.full_name
+      });
+    } else if (updates.notes && updates.notes !== existing?.notes) {
+      await sendUpdateNotification(id, 'note_added', {
+        noteTitle: updates.notes.substring(0, 50) + (updates.notes.length > 50 ? '...' : ''),
+        updatedBy: user.full_name
+      });
+    }
+
     // Log to audit log
     await supabase.from('audit_log').insert({
       user_id: user.display_id,
       company_filing_id: id,
-      action: 'status_changed',
-      new_value: { status: updates.status },
+      action: updates.status ? 'status_changed' : 'details_updated',
+      new_value: { status: updates.status, notes: updates.notes },
     });
 
     return NextResponse.json({ success: true, filing: updated });

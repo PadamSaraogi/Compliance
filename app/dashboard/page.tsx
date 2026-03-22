@@ -9,6 +9,8 @@ import { HeatmapCalendar } from '@/components/dashboard/HeatmapCalendar';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { AddComplianceModal } from '@/components/dashboard/AddComplianceModal';
+import { Plus } from 'lucide-react';
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<any>(null);
@@ -16,6 +18,8 @@ export default function DashboardPage() {
   const [upcoming, setUpcoming] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [user, setUser] = useState<any>(null);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
 
   const fetchData = async () => {
     setLoading(true);
@@ -24,19 +28,25 @@ export default function DashboardPage() {
       const activeCompanyId = localStorage.getItem('activeCompanyId');
       const query = activeCompanyId ? `?company_id=${activeCompanyId}` : '';
       
-      const [statsRes, heatmapRes, upcomingRes] = await Promise.all([
+      const [statsRes, heatmapRes, upcomingRes, userRes] = await Promise.all([
         fetch(`/api/dashboard/stats${query}`),
         fetch(`/api/dashboard/heatmap${query}`),
-        fetch(`/api/dashboard/upcoming${query}`)
+        fetch(`/api/dashboard/upcoming${query}`),
+        fetch('/api/auth/me')
       ]);
+      if (statsRes.status === 401 || heatmapRes.status === 401 || upcomingRes.status === 401 || userRes.status === 401) {
+        window.location.href = '/login?from=/dashboard';
+        return;
+      }
       
       if (!statsRes.ok || !heatmapRes.ok || !upcomingRes.ok) {
-        throw new Error('Failed to load some dashboard data. Please check your connection and try again.');
+        throw new Error('Failed to load dashboard data');
       }
 
       setStats(await statsRes.json());
       setHeatmap(await heatmapRes.json());
       setUpcoming((await upcomingRes.json()).upcoming);
+      if (userRes.ok) setUser((await userRes.json()).user);
     } catch (err: any) {
       console.error('Error fetching dashboard data:', err);
       setError(err.message || 'An unexpected error occurred.');
@@ -88,6 +98,17 @@ export default function DashboardPage() {
     <PageWrapper>
       <div className="space-y-6 animate-fade-in transition-all">
         
+        {/* Header with Title and Add Button */}
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <h1 className="text-2xl font-serif text-[var(--color-navy)]">Performance Overview</h1>
+          {(user?.role === 'admin' || user?.role === 'accountant') && (
+            <Button onClick={() => setIsAddModalOpen(true)} className="flex items-center gap-2">
+              <Plus size={18} />
+              Add Compliance
+            </Button>
+          )}
+        </div>
+
         {/* Metric Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <MetricCard title="Total Filings Tracked" value={stats.total} />
@@ -180,6 +201,12 @@ export default function DashboardPage() {
         </Card>
 
       </div>
+      
+      <AddComplianceModal 
+        isOpen={isAddModalOpen} 
+        onClose={() => setIsAddModalOpen(false)} 
+        onSuccess={fetchData} 
+      />
     </PageWrapper>
   );
 }

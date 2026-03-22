@@ -40,6 +40,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
     if (error) throw error;
     
+    // Trigger Real-Time Notification
+    const { sendUpdateNotification } = await import('@/lib/notifications');
+    await sendUpdateNotification(id, 'file_uploaded', {
+      fileName: file.name,
+      updatedBy: user.full_name
+    });
+
     await supabase.from('audit_log').insert({
       user_id: user.display_id,
       company_filing_id: id,

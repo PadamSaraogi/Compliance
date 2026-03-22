@@ -24,7 +24,7 @@ export async function GET(req: Request) {
       query = query.eq('company_id', companyId);
     }
 
-    const { data: filings, error } = await query;
+    const { data: filings, error } = await query.limit(5000);
       
     if (error) throw error;
 

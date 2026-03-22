@@ -29,7 +29,11 @@ export default function FilingsPage() {
       if (activeCompanyId) query.append('company_id', activeCompanyId);
       
       const res = await fetch(`/api/filings?${query.toString()}`);
-      if (!res.ok) throw new Error('Failed to load filings');
+      if (res.status === 401) {
+        window.location.href = `/login?from=/filings`;
+        return;
+      }
+      if (!res.ok) throw new Error('Failed to fetch filings');
       const data = await res.json();
       setFilings(data.filings || []);
       

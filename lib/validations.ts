@@ -17,9 +17,13 @@ export const noteSchema = z.object({
   note: z.string().min(1, 'Note cannot be empty').max(2000, 'Note is too long')
 });
 
-export const userSchema = z.object({
-  email: z.string().email(),
-  full_name: z.string().min(2),
-  role: z.enum(['admin', 'ceo', 'accountant']),
-  is_active: z.boolean().default(true)
+export const complianceCreateSchema = z.object({
+  name: z.string().min(3, 'Name is too short'),
+  categoryId: z.string().uuid('Invalid category'),
+  companyId: z.string(), // can be a UUID or 'all'
+  type: z.enum(['one-time', 'recurring']),
+  frequency: z.enum(['Monthly', 'Quarterly', 'Annual', 'Once']).optional(),
+  dueDate: z.string().optional(), // YYYY-MM-DD for one-time
+  dueDateRule: z.string().optional(), // rule text for recurring
+  notes: z.string().optional()
 });

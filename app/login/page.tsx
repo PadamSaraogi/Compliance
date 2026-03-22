@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 
 export default function LoginPage() {
@@ -12,6 +12,8 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const from = searchParams.get('from') || '';
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -31,7 +33,9 @@ export default function LoginPage() {
         throw new Error(data.error || 'Login failed');
       }
 
-      if (data.role === 'ceo') {
+      if (from) {
+        router.push(from);
+      } else if (data.role === 'ceo') {
         router.push('/dashboard');
       } else if (data.role === 'admin') {
         router.push('/admin');

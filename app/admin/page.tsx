@@ -298,6 +298,20 @@ export default function AdminPage() {
               </Card>
             </form>
 
+            <form onSubmit={handleSaveSettings}>
+              <Card>
+                <CardHeader><CardTitle>Update-Based Notifications</CardTitle></CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-medium text-[var(--color-muted)] mb-1">Alert Recipients (comma separated)</label>
+                    <Input placeholder="operations@company.com, admin@company.com" value={settings.update_notification_recipients || ''} onChange={e => setSettings({...settings, update_notification_recipients: e.target.value})} />
+                    <p className="text-xs text-[var(--color-muted)] mt-1">These addresses receive instant email alerts whenever a filing is updated or a document is uploaded.</p>
+                  </div>
+                  <Button type="submit">Save Alert Recipients</Button>
+                </CardContent>
+              </Card>
+            </form>
+
             <Card>
               <CardHeader><CardTitle>Test Email System</CardTitle></CardHeader>
               <CardContent className="space-y-4">

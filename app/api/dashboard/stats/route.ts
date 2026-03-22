@@ -26,14 +26,14 @@ export async function GET(req: Request) {
             color
           )
         )
-      `)
+      `, { count: 'exact' })
       .neq('status', 'NA');
 
     if (companyId && companyId !== 'all') {
       query = query.eq('company_id', companyId);
     }
 
-    const { data: filings, error } = await query;
+    const { data: filings, error, count } = await query.limit(5000);
       
     if (error) throw error;
 
@@ -46,7 +46,7 @@ export async function GET(req: Request) {
     const currentYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
     const fyStart = new Date(currentYear, 3, 1);
 
-    let total = filings.length;
+    let total = count || 0;
     let overdueCount = 0;
     let due30Days = 0;
     let completedThisFY = 0;
