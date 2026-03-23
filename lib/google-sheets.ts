@@ -88,12 +88,12 @@ export async function syncMasterFilings() {
     console.log('Successfully upserted Master Filings to Supabase.');
 
     // FULL SYNC: Remove master filings not in the sheet (only if they were synced from sheet before)
-    const sheetFilingNames = uniquePayloads.map(p => p.name);
+    const sheetFilingNamesSet = new Set(uniquePayloads.map(p => p.name.trim().toUpperCase()));
     const { data: dbMasters } = await supabase.from('master_filings').select('id, name').eq('synced_from_sheet', true);
-    const mastersToDelete = (dbMasters || []).filter(m => !sheetFilingNames.includes(m.name));
+    const mastersToDelete = (dbMasters || []).filter(m => !sheetFilingNamesSet.has(m.name.trim().toUpperCase()));
 
     if (mastersToDelete.length > 0) {
-      console.log(`Deleting ${mastersToDelete.length} master filings not in sheet.`);
+      console.log(`[FULL SYNC] Deleting ${mastersToDelete.length} master filings not in sheet:`, mastersToDelete.map(m => m.name));
       const deleteMasterIds = mastersToDelete.map(m => m.id);
       
       // 0. Get filing IDs to clean up audit logs
@@ -251,12 +251,12 @@ export async function syncCompaniesFromSheet() {
     console.log(`Successfully synced ${payloads.length} companies to database.`);
 
     // FULL SYNC: Remove companies not in the sheet
-    const sheetNames = payloads.map(p => p.name);
+    const sheetNamesSet = new Set(payloads.map(p => p.name.trim().toUpperCase()));
     const { data: dbCompanies } = await supabase.from('companies').select('id, name');
-    const companiesToDelete = (dbCompanies || []).filter(c => !sheetNames.includes(c.name));
+    const companiesToDelete = (dbCompanies || []).filter(c => !sheetNamesSet.has(c.name.trim().toUpperCase()));
 
     if (companiesToDelete.length > 0) {
-      console.log(`Deleting ${companiesToDelete.length} companies not in sheet.`);
+      console.log(`[FULL SYNC] Deleting ${companiesToDelete.length} companies not in sheet:`, companiesToDelete.map(c => c.name));
       const deleteIds = companiesToDelete.map(c => c.id);
 
       // 0. Get filing IDs to clean up audit logs
