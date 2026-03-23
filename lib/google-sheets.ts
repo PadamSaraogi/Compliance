@@ -93,22 +93,23 @@ export async function syncMasterFilings() {
     const mastersToDelete = (dbMasters || []).filter(m => !sheetFilingNamesSet.has(m.name.trim().toUpperCase()));
 
     if (mastersToDelete.length > 0) {
-      console.log(`[FULL SYNC] Deleting ${mastersToDelete.length} master filings not in sheet:`, mastersToDelete.map(m => m.name));
+      console.log(`[FULL SYNC] Deleting ${mastersToDelete.length} master filings no longer in sheet:`, mastersToDelete.map(m => m.name));
       const deleteMasterIds = mastersToDelete.map(m => m.id);
       
-      // 0. Get filing IDs to clean up audit logs
+      // We will NO LONGER delete company_filings here. 
+      // Instead, we let the master record deletion handle it if CASCADE is on, 
+      // or we just delete the master filing itself and its instances.
+      
+      // Cleanup audit logs for filings that WILL be orphaned/deleted
       const { data: filings } = await supabase.from('company_filings').select('id').in('master_filing_id', deleteMasterIds);
       const filingIds = (filings || []).map(f => f.id);
-      
       if (filingIds.length > 0) {
-        // 1a. Delete from audit_log
         await supabase.from('audit_log').delete().in('company_filing_id', filingIds);
       }
       
-      // 1b. Delete associated company filings first to avoid FK constraint issues
+      // Delete associated filings first to avoid FK constraint issues
       await supabase.from('company_filings').delete().in('master_filing_id', deleteMasterIds);
-      
-      // 2. Delete the master filings themselves
+
       const { error: delError } = await supabase.from('master_filings').delete().in('id', deleteMasterIds);
       if (delError) console.error('Error deleting master filings:', delError.message);
     }
@@ -147,39 +148,39 @@ export async function applyMasterRulesToCompanies() {
   const allNewFilings: any[] = [];
 
   // 2. Cross-reference
-  for (const company of companies) {
-    for (const rule of masters) {
-      // Check if applicable (matches entity type or 'all')
-      const applicableCodes = rule.applicable_to || [];
-      const isMatch = applicableCodes.length === 0 || 
-                      applicableCodes.includes('all') || 
-                      applicableCodes.some((code: string) => {
-                        const rawCode = code.trim().toUpperCase();
-                        const standardEntity = rawCode;
-                        const companyType = company.entity_type.trim().toUpperCase();
-                        
-                        // 1. Direct Company Name Match (Case-insensitive)
-                        if (company.name.toUpperCase() === rawCode) return true;
+  console.log(`Analyzing matches for ${masters.length} rules...`);
+  for (const rule of masters) {
+    let matchCount = 0;
+    const applicableCodes = (rule.applicable_to || []).map((c: string) => c.trim().toUpperCase());
+    const isAll = applicableCodes.length === 0 || applicableCodes.includes('ALL');
 
-                        // 2. Entity Type Match (Flexible)
-                        // This handles both short codes (PVT) and full names (PRIVATE LIMITED)
-                        const indAliases = ['INDIV', 'INDIVIDUAL', 'IND'];
-                        const pvtAliases = ['PVT', 'PRIVATE LIMITED', 'PRIVATE'];
-                        const pubAliases = ['PUB', 'PUBLIC LIMITED', 'PUBLIC'];
-                        const hufAliases = ['HUF', 'HINDU UNDIVIDED FAMILY'];
-                        const llpAliases = ['LLP', 'LIMITED LIABILITY PARTNERSHIP'];
-                        
-                        if (indAliases.includes(standardEntity) && companyType === 'INDIVIDUAL') return true;
-                        if (pvtAliases.includes(standardEntity) && companyType === 'PRIVATE LIMITED') return true;
-                        if (pubAliases.includes(standardEntity) && companyType === 'PUBLIC LIMITED') return true;
-                        if (hufAliases.includes(standardEntity) && companyType === 'HUF') return true;
-                        if (llpAliases.includes(standardEntity) && companyType === 'LLP') return true;
+    for (const company of companies) {
+      const companyName = company.name.toUpperCase();
+      const companyType = company.entity_type.trim().toUpperCase();
+      
+      let isMatch = isAll;
+      
+      if (!isMatch) {
+        isMatch = applicableCodes.some((code: string) => {
+          // 1. Direct Name Match
+          if (companyName === code) return true;
 
-                        // Fallback: startsWith or exact match
-                        return companyType.startsWith(standardEntity) || companyType === standardEntity;
-                      });
+          // 2. Entity Type Match (Aliases)
+          if (code === 'INDIV' || code === 'INDIVIDUAL' || code === 'IND') return companyType === 'INDIVIDUAL';
+          if (code === 'PVT' || code === 'PRIVATE LIMITED' || code === 'PRIVATE') return companyType === 'PRIVATE LIMITED';
+          if (code === 'PUB' || code === 'PUBLIC LIMITED' || code === 'PUBLIC') return companyType === 'PUBLIC LIMITED';
+          if (code === 'LLP' || code === 'LIMITED LIABILITY PARTNERSHIP') return companyType === 'LLP';
+          if (code === 'HUF' || code === 'HINDU UNDIVIDED FAMILY') return companyType === 'HUF';
+          if (code === 'PART' || code === 'PARTNERSHIP') return companyType === 'PARTNERSHIP';
+          if (code === 'SOLE' || code === 'SOLE PROPRIETORSHIP' || code === 'SOLE') return companyType === 'SOLE PROPRIETORSHIP';
+          if (code === 'SBL SUB' || code === 'SBL SUBSIDIARY') return companyType === 'SBL SUBSIDIARY';
+
+          return companyType.includes(code) || companyType.startsWith(code);
+        });
+      }
 
       if (isMatch) {
+        matchCount++;
         const instances = getComplianceInstances(rule.name, rule.frequency, rule.due_date_rule);
         for (const inst of instances) {
           allNewFilings.push({
@@ -192,6 +193,9 @@ export async function applyMasterRulesToCompanies() {
           });
         }
       }
+    }
+    if (matchCount > 0) {
+      console.log(`Rule "${rule.name}" matched ${matchCount} companies.`);
     }
   }
 
