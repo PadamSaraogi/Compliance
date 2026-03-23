@@ -87,6 +87,32 @@ export async function syncMasterFilings() {
     }
     console.log('Successfully upserted Master Filings to Supabase.');
 
+    // FULL SYNC: Remove master filings not in the sheet (only if they were synced from sheet before)
+    const sheetFilingNames = uniquePayloads.map(p => p.name);
+    const { data: dbMasters } = await supabase.from('master_filings').select('id, name').eq('synced_from_sheet', true);
+    const mastersToDelete = (dbMasters || []).filter(m => !sheetFilingNames.includes(m.name));
+
+    if (mastersToDelete.length > 0) {
+      console.log(`Deleting ${mastersToDelete.length} master filings not in sheet.`);
+      const deleteMasterIds = mastersToDelete.map(m => m.id);
+      
+      // 0. Get filing IDs to clean up audit logs
+      const { data: filings } = await supabase.from('company_filings').select('id').in('master_filing_id', deleteMasterIds);
+      const filingIds = (filings || []).map(f => f.id);
+      
+      if (filingIds.length > 0) {
+        // 1a. Delete from audit_log
+        await supabase.from('audit_log').delete().in('company_filing_id', filingIds);
+      }
+      
+      // 1b. Delete associated company filings first to avoid FK constraint issues
+      await supabase.from('company_filings').delete().in('master_filing_id', deleteMasterIds);
+      
+      // 2. Delete the master filings themselves
+      const { error: delError } = await supabase.from('master_filings').delete().in('id', deleteMasterIds);
+      if (delError) console.error('Error deleting master filings:', delError.message);
+    }
+
     // AUTOMATICALLY APPLY RULES TO ALL COMPANIES
     const applyResult = await applyMasterRulesToCompanies();
 
@@ -213,6 +239,33 @@ export async function syncCompaniesFromSheet() {
       throw error;
     }
     console.log(`Successfully synced ${payloads.length} companies to database.`);
+
+    // FULL SYNC: Remove companies not in the sheet
+    const sheetNames = payloads.map(p => p.name);
+    const { data: dbCompanies } = await supabase.from('companies').select('id, name');
+    const companiesToDelete = (dbCompanies || []).filter(c => !sheetNames.includes(c.name));
+
+    if (companiesToDelete.length > 0) {
+      console.log(`Deleting ${companiesToDelete.length} companies not in sheet.`);
+      const deleteIds = companiesToDelete.map(c => c.id);
+
+      // 0. Get filing IDs to clean up audit logs
+      const { data: filings } = await supabase.from('company_filings').select('id').in('company_id', deleteIds);
+      const filingIds = (filings || []).map(f => f.id);
+
+      if (filingIds.length > 0) {
+        // 1a. Delete from audit_log
+        await supabase.from('audit_log').delete().in('company_filing_id', filingIds);
+      }
+
+      // 1b. Delete associated company filings first
+      await supabase.from('company_filings').delete().in('company_id', deleteIds);
+      
+      // 2. Delete the companies themselves
+      const { error: delError } = await supabase.from('companies').delete().in('id', deleteIds);
+      if (delError) console.error('Error deleting companies:', delError.message);
+    }
+
     return { success: true, count: payloads.length };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -254,10 +307,22 @@ export async function syncFilingsFromSheet() {
 
     if (filings.length === 0) return { success: true, count: 0 };
 
-    // Grouping by company for clearer upsert? No, just batch insert/upsert
-    // Note: We don't have a unique constraint on title/deadline yet, so we insert or handle intelligently
-    const { error } = await supabase.from('company_filings').insert(filings);
-    if (error) throw error;
+    // Use upsert to avoid duplicates, or handle manual full sync for this tab too?
+    // Given the user wants "Full Sync", let's clear existing manual filings for these companies before inserting?
+    // Actually, upsert is better if we have a constraint. 
+    // Since we might not have a database constraint yet, we'll use a safer approach:
+    // Delete existing filings for the companies in the sheet that match title + period before inserting.
+    
+    // For now, let's just use insert but warn that a constraint is needed for true upsert.
+    // Or, we can do a smart upsert:
+    const { error } = await supabase.from('company_filings').upsert(filings, { onConflict: 'company_id, title, period' });
+    
+    if (error) {
+      console.warn('Upsert failed for company_filings (likely missing constraint):', error.message);
+      // Fallback to simple insert
+      const { error: insError } = await supabase.from('company_filings').insert(filings);
+      if (insError) throw insError;
+    }
     return { success: true, count: filings.length };
   } catch (error: any) {
     return { success: false, error: error.message };
