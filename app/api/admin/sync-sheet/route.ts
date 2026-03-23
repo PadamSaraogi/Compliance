@@ -7,13 +7,13 @@ export async function POST() {
     const user = await getCurrentUser();
     if (user?.role !== 'admin') return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
 
-    // 1. Sync Categories & Master Filing Rules
-    const masterResult = await syncMasterFilings();
-    
-    // 2. Sync Companies
+    // 1. Sync Companies first so that new companies are available for rules
     const companyResult = await syncCompaniesFromSheet();
     
-    // 3. Sync Specific Compliance Filings/Dates
+    // 2. Sync Categories & Master Filing Rules (and apply them to the updated company list)
+    const masterResult = await syncMasterFilings();
+    
+    // 3. Sync Specific Compliance Filings/Dates (manual overrides)
     const filingResult = await syncFilingsFromSheet();
 
     return NextResponse.json({

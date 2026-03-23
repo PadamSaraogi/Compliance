@@ -42,9 +42,10 @@ export async function GET(req: Request) {
     const thirtyDaysFromNow = new Date(now);
     thirtyDaysFromNow.setDate(now.getDate() + 30);
     
-    // Financial Year Start (April 1st)
+    // Financial Year Start (April 1st) and End (March 31st of the following year)
     const currentYear = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
     const fyStart = new Date(currentYear, 3, 1);
+    const fyEnd = new Date(currentYear + 1, 2, 31, 23, 59, 59);
 
     let totalCountAllTime = count || 0;
     let overdueCount = 0;
@@ -59,7 +60,7 @@ export async function GET(req: Request) {
       const isCompleted = f.status === 'Done';
       
       // We only care about current FY for the primary dashboard metrics
-      const isCurrentFY = deadline >= fyStart;
+      const isCurrentFY = deadline >= fyStart && deadline <= fyEnd;
       
       if (isCurrentFY) {
         totalEligibleThisFY++;

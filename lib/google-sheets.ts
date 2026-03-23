@@ -154,19 +154,29 @@ export async function applyMasterRulesToCompanies() {
       const isMatch = applicableCodes.length === 0 || 
                       applicableCodes.includes('all') || 
                       applicableCodes.some((code: string) => {
-                        const rawCode = code.trim();
-                        const standardEntity = rawCode.toUpperCase();
+                        const rawCode = code.trim().toUpperCase();
+                        const standardEntity = rawCode;
+                        const companyType = company.entity_type.trim().toUpperCase();
                         
                         // 1. Direct Company Name Match (Case-insensitive)
-                        if (company.name.toLowerCase() === rawCode.toLowerCase()) return true;
+                        if (company.name.toUpperCase() === rawCode) return true;
 
-                        // 2. Entity Type Match
-                        return company.entity_type.startsWith(standardEntity) || 
-                               (standardEntity === 'PVT' && company.entity_type === 'Private Limited') ||
-                               (standardEntity === 'PUB' && company.entity_type === 'Public Limited') ||
-                               (standardEntity === 'LLP' && company.entity_type === 'LLP') ||
-                               (standardEntity === 'INDIV' && company.entity_type === 'Individual') ||
-                               (standardEntity === 'HUF' && company.entity_type === 'HUF');
+                        // 2. Entity Type Match (Flexible)
+                        // This handles both short codes (PVT) and full names (PRIVATE LIMITED)
+                        const indAliases = ['INDIV', 'INDIVIDUAL', 'IND'];
+                        const pvtAliases = ['PVT', 'PRIVATE LIMITED', 'PRIVATE'];
+                        const pubAliases = ['PUB', 'PUBLIC LIMITED', 'PUBLIC'];
+                        const hufAliases = ['HUF', 'HINDU UNDIVIDED FAMILY'];
+                        const llpAliases = ['LLP', 'LIMITED LIABILITY PARTNERSHIP'];
+                        
+                        if (indAliases.includes(standardEntity) && companyType === 'INDIVIDUAL') return true;
+                        if (pvtAliases.includes(standardEntity) && companyType === 'PRIVATE LIMITED') return true;
+                        if (pubAliases.includes(standardEntity) && companyType === 'PUBLIC LIMITED') return true;
+                        if (hufAliases.includes(standardEntity) && companyType === 'HUF') return true;
+                        if (llpAliases.includes(standardEntity) && companyType === 'LLP') return true;
+
+                        // Fallback: startsWith or exact match
+                        return companyType.startsWith(standardEntity) || companyType === standardEntity;
                       });
 
       if (isMatch) {
