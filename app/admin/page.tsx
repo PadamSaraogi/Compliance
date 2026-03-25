@@ -35,7 +35,7 @@ export default function AdminPage() {
         } catch (e) {
           // Migration from old comma-separated string
           const emails = (st.update_notification_recipients || '').split(',').map((e: string) => e.trim()).filter(Boolean);
-          setAlertRecipients(emails.map(e => ({ email: e, alerts: { days30: true, days7: true, days3: true, days2: true, days1: true, completed: true } })));
+          setAlertRecipients(emails.map((e: string) => ({ email: e, alerts: { days30: true, days7: true, days3: true, days2: true, days1: true, completed: true } })));
         }
       }
     } catch (e) { console.error(e); } finally { setLoading(false); }
