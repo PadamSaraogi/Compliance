@@ -17,10 +17,21 @@ export async function sendUpdateNotification(
 ) {
   const supabase = getAdminSupabase();
 
-  // 1. Get recipients from settings
+  // 1. Get recipients from granular settings
   const { data: settings } = await supabase.from('app_settings').select('*');
-  const recipientStr = settings?.find(s => s.key === 'update_notification_recipients')?.value || '';
-  const recipients = recipientStr.split(',').map((e: string) => e.trim()).filter(Boolean);
+  const updateRecipientStr = settings?.find(s => s.key === 'update_notification_recipients')?.value || '[]';
+  
+  let granularRecipients: Array<{email: string; alerts: Record<string, boolean>}> = [];
+  try {
+     granularRecipients = JSON.parse(updateRecipientStr);
+  } catch (e: any) {
+     const emails = updateRecipientStr.split(',').map((e: string) => e.trim()).filter(Boolean);
+     granularRecipients = emails.map((email: string) => ({ email, alerts: { completed: true } }));
+  }
+
+  const recipients = granularRecipients
+    .filter(sub => sub.alerts.completed)
+    .map(sub => sub.email);
 
   if (recipients.length === 0) return;
 

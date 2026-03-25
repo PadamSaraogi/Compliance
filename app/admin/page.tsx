@@ -16,6 +16,7 @@ export default function AdminPage() {
   const [syncMessage, setSyncMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
   const [testEmail, setTestEmail] = useState('');
   const [emailStatus, setEmailStatus] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  const [alertRecipients, setAlertRecipients] = useState<Array<{email: string; alerts: Record<string, boolean>}>>([]);
 
   const fetchAdminData = async () => {
     try {
@@ -25,7 +26,18 @@ export default function AdminPage() {
       ]);
       
       if (uRes.ok) setUsers((await uRes.json()).users);
-      if (sRes.ok) setSettings((await sRes.json()).settings);
+      if (sRes.ok) {
+        const st = (await sRes.json()).settings;
+        setSettings(st);
+        try {
+          const parsed = JSON.parse(st.update_notification_recipients || '[]');
+          if (Array.isArray(parsed)) setAlertRecipients(parsed);
+        } catch (e) {
+          // Migration from old comma-separated string
+          const emails = (st.update_notification_recipients || '').split(',').map((e: string) => e.trim()).filter(Boolean);
+          setAlertRecipients(emails.map(e => ({ email: e, alerts: { days30: true, days7: true, days3: true, days2: true, days1: true, completed: true } })));
+        }
+      }
     } catch (e) { console.error(e); } finally { setLoading(false); }
   };
 
@@ -89,10 +101,14 @@ export default function AdminPage() {
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      const payload = { 
+        ...settings, 
+        update_notification_recipients: JSON.stringify(alertRecipients)
+      };
       await fetch('/api/admin/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify(payload)
       });
       alert('Settings saved successfully');
     } catch (e) {}
@@ -300,12 +316,50 @@ export default function AdminPage() {
 
             <form onSubmit={handleSaveSettings}>
               <Card>
-                <CardHeader><CardTitle>Update-Based Notifications</CardTitle></CardHeader>
+                <CardHeader><CardTitle>Granular Alert Subscriptions</CardTitle></CardHeader>
                 <CardContent className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-medium text-[var(--color-muted)] mb-1">Alert Recipients (comma separated)</label>
-                    <Input placeholder="operations@company.com, admin@company.com" value={settings.update_notification_recipients || ''} onChange={e => setSettings({...settings, update_notification_recipients: e.target.value})} />
-                    <p className="text-xs text-[var(--color-muted)] mt-1">These addresses receive instant email alerts whenever a filing is updated or a document is uploaded.</p>
+                  <div className="space-y-3">
+                    <p className="text-xs text-[var(--color-muted)]">Configure exactly which automated update alerts should go to which email explicitly.</p>
+                    {alertRecipients.map((rec, idx) => (
+                      <div key={idx} className="p-3 border rounded-md border-[var(--color-border)] bg-slate-50 relative">
+                        <button type="button" onClick={() => setAlertRecipients(alertRecipients.filter((_, i) => i !== idx))} className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-sm">Remove</button>
+                        <div className="mb-3 pr-12">
+                          <label className="block text-xs font-medium text-[var(--color-muted)] mb-1">Subscriber Email</label>
+                          <Input value={rec.email} type="email" required onChange={e => {
+                            const newRecs = [...alertRecipients];
+                            newRecs[idx].email = e.target.value;
+                            setAlertRecipients(newRecs);
+                          }}/>
+                        </div>
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                          {[
+                            { key: 'days30', label: '30 Days Warning' },
+                            { key: 'days7', label: '7 Days Warning' },
+                            { key: 'days3', label: '3 Days Warning' },
+                            { key: 'days2', label: '2 Days Warning' },
+                            { key: 'days1', label: '1 Day Warning' },
+                            { key: 'completed', label: 'When Completed' },
+                          ].map(t => (
+                            <label key={t.key} className="flex items-center gap-2 text-xs text-[var(--color-text)] cursor-pointer hover:bg-slate-100 p-1 rounded transition-colors">
+                              <input 
+                                type="checkbox" 
+                                checked={rec.alerts[t.key] || false}
+                                onChange={e => {
+                                  const newRecs = [...alertRecipients];
+                                  newRecs[idx].alerts[t.key] = e.target.checked;
+                                  setAlertRecipients(newRecs);
+                                }}
+                                className="accent-[var(--color-navy)] w-4 h-4 cursor-pointer"
+                              />
+                              {t.label}
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                    <Button type="button" variant="secondary" size="sm" onClick={() => {
+                      setAlertRecipients([...alertRecipients, { email: '', alerts: { days30: true, days7: true, days3: true, days2: true, days1: true, completed: true } }]);
+                    }}>+ Add Subscriber</Button>
                   </div>
                   <Button type="submit">Save Alert Recipients</Button>
                 </CardContent>

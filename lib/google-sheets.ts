@@ -199,16 +199,13 @@ export async function applyMasterRulesToCompanies() {
     }
   }
 
-  console.log(`Total filings to upsert: ${allNewFilings.length}`);
-
   if (allNewFilings.length > 0) {
     const { error } = await supabase.from('company_filings').upsert(allNewFilings, { 
-      onConflict: 'company_id, title' 
+      onConflict: 'company_id,title' 
     });
     if (error) {
-      console.warn('Upsert failed for company_filings:', error.message);
-      // Fallback: just insert and ignore errors for duplicates
-      await supabase.from('company_filings').insert(allNewFilings);
+      console.error('Upsert failed for company_filings:', error.message);
+      throw new Error(`Filings Sync Failed: ${error.message}`);
     }
     console.log(`Successfully synced ${allNewFilings.length} filings to database.`);
     return { count: allNewFilings.length };
@@ -329,13 +326,11 @@ export async function syncFilingsFromSheet() {
     
     // For now, let's just use insert but warn that a constraint is needed for true upsert.
     // Or, we can do a smart upsert:
-    const { error } = await supabase.from('company_filings').upsert(filings, { onConflict: 'company_id, title, period' });
+    const { error } = await supabase.from('company_filings').upsert(filings, { onConflict: 'company_id,title' });
     
     if (error) {
-      console.warn('Upsert failed for company_filings (likely missing constraint):', error.message);
-      // Fallback to simple insert
-      const { error: insError } = await supabase.from('company_filings').insert(filings);
-      if (insError) throw insError;
+      console.error('Manual filings Upsert failed:', error.message);
+      throw new Error(`Manual filings Sync Failed: ${error.message}`);
     }
     return { success: true, count: filings.length };
   } catch (error: any) {

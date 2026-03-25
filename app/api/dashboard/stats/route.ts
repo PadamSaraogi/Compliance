@@ -33,9 +33,19 @@ export async function GET(req: Request) {
       query = query.eq('company_id', companyId);
     }
 
-    const { data: filings, error, count } = await query.limit(5000);
+    let filings: any[] = [];
+    let from = 0;
+    const step = 1000;
+    
+    while (true) {
+      const { data, error } = await query.range(from, from + step - 1);
+      if (error) throw error;
+      if (!data || data.length === 0) break;
       
-    if (error) throw error;
+      filings.push(...data);
+      if (data.length < step) break;
+      from += step;
+    }
 
     const now = new Date();
     now.setHours(0,0,0,0);
@@ -47,7 +57,7 @@ export async function GET(req: Request) {
     const fyStart = new Date(currentYear, 3, 1);
     const fyEnd = new Date(currentYear + 1, 2, 31, 23, 59, 59);
 
-    let totalCountAllTime = count || 0;
+    let totalCountAllTime = filings.length;
     let overdueCount = 0;
     let due30Days = 0;
     let completedThisFY = 0;
