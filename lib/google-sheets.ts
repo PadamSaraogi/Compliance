@@ -145,6 +145,25 @@ export async function applyMasterRulesToCompanies() {
   }
 
   console.log(`Applying ${masters.length} rules to ${companies.length} companies...`);
+  
+  // 1b. Fetch all existing filings to preserve manual user updates (status, notes)
+  let existingFilings: any[] = [];
+  let from = 0; const step = 1000;
+  while(true) {
+    const { data } = await supabase.from('company_filings')
+      .select('company_id, title, status, notes, completed_at, completed_by, assigned_to')
+      .range(from, from + step - 1);
+    if (!data || data.length === 0) break;
+    existingFilings.push(...data);
+    if (data.length < step) break;
+    from += step;
+  }
+  
+  const existingMap = new Map();
+  existingFilings.forEach(f => {
+    existingMap.set(`${f.company_id}_${f.title}`, f);
+  });
+
   const allNewFilings: any[] = [];
 
   // 2. Cross-reference
@@ -183,14 +202,27 @@ export async function applyMasterRulesToCompanies() {
         matchCount++;
         const instances = getComplianceInstances(rule.name, rule.frequency, rule.due_date_rule);
         for (const inst of instances) {
-          allNewFilings.push({
+          const key = `${company.id}_${inst.title}`;
+          const existing = existingMap.get(key);
+          
+          const payload: any = {
             company_id: company.id,
             master_filing_id: rule.id,
             title: inst.title,
             deadline: inst.deadline,
-            status: inst.status,
+            // PRESERVE user status, falling back to default calculated status
+            status: existing ? existing.status : inst.status,
             period: inst.period || null,
-          });
+          };
+          
+          if (existing) {
+            if (existing.notes) payload.notes = existing.notes;
+            if (existing.completed_at) payload.completed_at = existing.completed_at;
+            if (existing.completed_by) payload.completed_by = existing.completed_by;
+            if (existing.assigned_to) payload.assigned_to = existing.assigned_to;
+          }
+          
+          allNewFilings.push(payload);
         }
       }
     }
@@ -297,35 +329,54 @@ export async function syncFilingsFromSheet() {
     const companyMap = new Map((companies || []).map((c: any) => [c.name, c.id]));
     const masterMap = new Map((masters || []).map((m: any) => [m.name, m.id]));
 
+    // Fetch existing filings to preserve manual user updates
+    let existingFilings: any[] = [];
+    let from = 0; const step = 1000;
+    while(true) {
+      const { data } = await supabase.from('company_filings')
+        .select('company_id, title, status, notes, completed_at, completed_by, assigned_to')
+        .range(from, from + step - 1);
+      if (!data || data.length === 0) break;
+      existingFilings.push(...data);
+      if (data.length < step) break;
+      from += step;
+    }
+    
+    const existingMap = new Map();
+    existingFilings.forEach(f => {
+      existingMap.set(`${f.company_id}_${f.title}`, f);
+    });
+
     const filings = rows.map((row: any) => {
       const [companyName, title, deadline, status, categoryName, period] = row;
       const companyId = companyMap.get(companyName);
       if (!companyId || !title || !deadline) return null;
 
-      // Try to find a master filing by name
       const masterId = masterMap.get(title) || null;
+      const existing = existingMap.get(`${companyId}_${title}`);
 
-      return {
+      const payload: any = {
         company_id: companyId,
         master_filing_id: masterId,
         title,
         deadline,
-        status: status || 'Pending',
+        status: existing ? existing.status : (status || 'Pending'),
         period,
         updated_at: new Date().toISOString()
       };
-    }).filter(f => f !== null);
+      
+      if (existing) {
+        if (existing.notes) payload.notes = existing.notes;
+        if (existing.completed_at) payload.completed_at = existing.completed_at;
+        if (existing.completed_by) payload.completed_by = existing.completed_by;
+        if (existing.assigned_to) payload.assigned_to = existing.assigned_to;
+      }
+      
+      return payload;
+    }).filter((f: any) => f !== null);
 
     if (filings.length === 0) return { success: true, count: 0 };
-
-    // Use upsert to avoid duplicates, or handle manual full sync for this tab too?
-    // Given the user wants "Full Sync", let's clear existing manual filings for these companies before inserting?
-    // Actually, upsert is better if we have a constraint. 
-    // Since we might not have a database constraint yet, we'll use a safer approach:
-    // Delete existing filings for the companies in the sheet that match title + period before inserting.
     
-    // For now, let's just use insert but warn that a constraint is needed for true upsert.
-    // Or, we can do a smart upsert:
     const { error } = await supabase.from('company_filings').upsert(filings, { onConflict: 'company_id,title' });
     
     if (error) {
